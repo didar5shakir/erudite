@@ -1,17 +1,21 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useLocale } from 'next-intl'
+import { useRouter, usePathname } from '@/i18n/navigation'
 
 const languages = [
-  { code: 'EN', label: 'English' },
-  { code: 'RU', label: 'Русский' },
-  { code: 'KK', label: 'Қазақ' },
+  { code: 'en', label: 'English' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'kk', label: 'Қазақ' },
 ]
 
 export default function LanguageSwitcher() {
-  const [selected, setSelected] = useState('RU')
+  const currentLocale = useLocale()
   const [isOpen, setIsOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -23,13 +27,18 @@ export default function LanguageSwitcher() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  function handleSelect(locale: string) {
+    router.replace(pathname, { locale })
+    setIsOpen(false)
+  }
+
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setIsOpen((v) => !v)}
         className="flex items-center gap-1 text-sm text-muted hover:text-graphite transition-colors"
       >
-        {selected}
+        {currentLocale.toUpperCase()}
         <span
           className={`text-xs transition-transform duration-200 inline-block ${isOpen ? 'rotate-180' : ''}`}
         >
@@ -42,15 +51,15 @@ export default function LanguageSwitcher() {
           {languages.map((lang) => (
             <button
               key={lang.code}
-              onClick={() => { setSelected(lang.code); setIsOpen(false) }}
+              onClick={() => handleSelect(lang.code)}
               className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-divider/60 transition-colors"
             >
-              <span className={selected === lang.code ? 'text-graphite font-medium' : 'text-muted'}>
+              <span className={currentLocale === lang.code ? 'text-graphite font-medium' : 'text-muted'}>
                 {lang.label}
               </span>
               <span className="flex items-center gap-2">
-                <span className="text-xs text-muted/70">{lang.code}</span>
-                {selected === lang.code && (
+                <span className="text-xs text-muted/70">{lang.code.toUpperCase()}</span>
+                {currentLocale === lang.code && (
                   <span className="text-emerald-deep text-xs">✓</span>
                 )}
               </span>

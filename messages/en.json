@@ -1,0 +1,13 @@
+{
+  "brand": "Erudite",
+  "tagline": "Find out how many famous people you know",
+  "description": "From the 15,000 most iconic figures in world history",
+  "method": "Adaptive testing algorithm — the same one used in IQ tests. With just 100 answers, it pinpoints your level and precisely estimates your knowledge across all 15,000 figures.",
+  "features": {
+    "adaptive": "Adaptive test that adjusts to you",
+    "noLogin": "No sign-up required — start right now",
+    "withAccount": "Create an account to save your progress and continue later"
+  },
+  "startButton": "Take the test",
+  "loginButton": "Sign in"
+}

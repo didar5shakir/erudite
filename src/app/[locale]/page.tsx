@@ -1,18 +1,28 @@
-import LanguageSwitcher from '@/components/LanguageSwitcher'
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
 
-const features = [
-  "Адаптивный тест подстраивается под тебя",
-  "Без регистрации — начни прямо сейчас",
-  "С аккаунтом сохранишь прогресс и сможешь продолжить",
-];
+export default async function Home({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  setRequestLocale(locale);
 
-export default function Home() {
+  const t = await getTranslations();
+
+  const features = [
+    t('features.adaptive'),
+    t('features.noLogin'),
+    t('features.withAccount'),
+  ];
+
   return (
     <main className="min-h-screen bg-cream flex flex-col animate-fade-up">
 
       <nav className="flex items-center justify-end gap-8 px-8 pt-5">
         <button className="text-sm text-muted hover:text-graphite transition-colors">
-          Войти
+          {t('loginButton')}
         </button>
         <LanguageSwitcher />
       </nav>
@@ -22,24 +32,22 @@ export default function Home() {
 
           <div className="flex flex-col items-center gap-3 lg:gap-5">
             <h1 className="font-serif font-light text-5xl md:text-6xl lg:text-7xl leading-none text-graphite tracking-tight">
-              Erudite
+              {t('brand')}
             </h1>
             <div className="h-px w-10 bg-divider" />
           </div>
 
           <div className="flex flex-col gap-2 md:gap-3">
             <p className="text-xl md:text-2xl lg:text-3xl text-graphite leading-snug">
-              Узнай, сколько известных людей ты знаешь
+              {t('tagline')}
             </p>
             <p className="text-sm md:text-base lg:text-lg text-muted">
-              Из 15 000 самых знаменитых в мировой истории
+              {t('description')}
             </p>
           </div>
 
           <p className="text-sm md:text-base lg:text-xl leading-relaxed text-graphite">
-            Алгоритм адаптивного тестирования — тот же, что в IQ-тестах.
-            По 100 ответам он определяет твой уровень и точно оценивает
-            знание всех 15 000 фигур.
+            {t('method')}
           </p>
 
           <ul className="flex flex-col gap-2 md:gap-3 lg:gap-4">
@@ -53,7 +61,7 @@ export default function Home() {
 
           <div className="flex justify-center">
             <button className="bg-emerald-deep text-white font-medium rounded-2xl hover:opacity-90 transition-opacity min-w-[280px] text-base px-10 py-4 lg:text-lg lg:px-12 lg:py-5">
-              Начать тест
+              {t('startButton')}
             </button>
           </div>
 
