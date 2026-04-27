@@ -9,5 +9,27 @@
     "withAccount": "Create an account to save your progress and continue later"
   },
   "startButton": "Take the test",
-  "loginButton": "Sign in"
+  "loginButton": "Sign in",
+  "onboarding": {
+    "title": "Where are you from?",
+    "subtitle": "This helps us pick figures you're more likely to recognize"
+  },
+  "quiz": {
+    "title": "Test coming soon",
+    "body": "Thanks for your interest. We're building a database of 15,000 figures and the adaptive algorithm. Launching in the coming weeks.",
+    "regionSaved": "Your region: {region}",
+    "backButton": "← Back to home"
+  },
+  "regions": {
+    "north_america": "North America",
+    "europe": "Europe",
+    "latin_america": "Latin America",
+    "east_asia": "East Asia",
+    "south_asia": "South Asia",
+    "southeast_asia": "Southeast Asia",
+    "middle_east_north_africa": "Middle East / North Africa",
+    "russia_cis": "Russia / CIS",
+    "kazakhstan_central_asia": "Kazakhstan / Central Asia",
+    "other": "Other"
+  }
 }

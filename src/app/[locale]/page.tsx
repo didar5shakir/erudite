@@ -1,4 +1,5 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { Link } from '@/i18n/navigation';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 
 export default async function Home({
@@ -60,9 +61,12 @@ export default async function Home({
           </ul>
 
           <div className="flex justify-center">
-            <button className="bg-emerald-deep text-white font-medium rounded-2xl hover:opacity-90 transition-opacity min-w-[280px] text-base px-10 py-4 lg:text-lg lg:px-12 lg:py-5">
+            <Link
+              href="/onboarding"
+              className="bg-emerald-deep text-white font-medium rounded-2xl hover:opacity-90 transition-opacity min-w-[280px] text-base px-10 py-4 lg:text-lg lg:px-12 lg:py-5 inline-flex items-center justify-center"
+            >
               {t('startButton')}
-            </button>
+            </Link>
           </div>
 
         </div>
