@@ -1,10 +1,10 @@
+import LanguageSwitcher from '@/components/LanguageSwitcher'
+
 const features = [
   "Адаптивный тест подстраивается под тебя",
   "Без регистрации — начни прямо сейчас",
   "С аккаунтом сохранишь прогресс и сможешь продолжить",
 ];
-
-const languages = ["EN", "RU", "KK"];
 
 export default function Home() {
   return (
@@ -14,17 +14,7 @@ export default function Home() {
         <button className="text-sm text-muted hover:text-graphite transition-colors">
           Войти
         </button>
-        <div className="flex gap-5 text-sm">
-          {languages.map((lang) =>
-            lang === "RU" ? (
-              <span key={lang} className="text-graphite font-medium">{lang}</span>
-            ) : (
-              <button key={lang} className="text-muted hover:text-graphite transition-colors">
-                {lang}
-              </button>
-            )
-          )}
-        </div>
+        <LanguageSwitcher />
       </nav>
 
       <div className="flex-1 flex items-center py-6 md:py-10 lg:py-14">
