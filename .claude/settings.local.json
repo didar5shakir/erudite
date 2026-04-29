@@ -5,7 +5,11 @@
       "Bash(npm run *)",
       "Bash(gh --version)",
       "Bash(git init *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(tee /tmp/04_filter_out.log)",
+      "Bash(python -X utf8 -c ' *)",
+      "Bash(tee /tmp/04_filter_fix.log)",
+      "Bash(python -c ' *)"
     ]
   }
 }

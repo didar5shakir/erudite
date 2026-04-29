@@ -20,6 +20,15 @@
     "regionSaved": "Аймақ сақталды: {region}",
     "backButton": "← Басты бетке оралу"
   },
+  "play": {
+    "know": "Білемін",
+    "heard": "Естідім",
+    "dont_know": "Білмеймін",
+    "progress": "{current} / {total}",
+    "result_title": "Сіз 50-нен {count} тұлғаны таныдыңыз",
+    "play_again": "Қайта ойнау",
+    "loading": "Жүктелуде…"
+  },
   "regions": {
     "north_america": "Солтүстік Америка",
     "europe": "Еуропа",

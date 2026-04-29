@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python scripts/data/01_download_pantheon.py)",
+      "Bash(python -X utf8 scripts/data/01_download_pantheon.py)",
+      "Bash(python -X utf8 scripts/data/02_filter.py)",
+      "Bash(python -X utf8 -m py_compile scripts/data/03_pageviews.py)",
+      "Bash(python -X utf8 -m py_compile scripts/data/04_score.py)",
+      "Bash(python -X utf8 -c ' *)"
+    ]
+  }
+}

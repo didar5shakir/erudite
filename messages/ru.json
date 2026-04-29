@@ -20,6 +20,15 @@
     "regionSaved": "Регион сохранён: {region}",
     "backButton": "← Вернуться на главную"
   },
+  "play": {
+    "know": "Знаю",
+    "heard": "Слышал(а)",
+    "dont_know": "Не знаю",
+    "progress": "{current} / {total}",
+    "result_title": "Ты узнал {count} из 50",
+    "play_again": "Пройти ещё раз",
+    "loading": "Загрузка…"
+  },
   "regions": {
     "north_america": "Северная Америка",
     "europe": "Европа",

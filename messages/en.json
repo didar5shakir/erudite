@@ -20,6 +20,15 @@
     "regionSaved": "Your region: {region}",
     "backButton": "← Back to home"
   },
+  "play": {
+    "know": "I know them",
+    "heard": "I've heard of them",
+    "dont_know": "Don't know",
+    "progress": "{current} / {total}",
+    "result_title": "You recognized {count} out of 50",
+    "play_again": "Play again",
+    "loading": "Loading…"
+  },
   "regions": {
     "north_america": "North America",
     "europe": "Europe",
