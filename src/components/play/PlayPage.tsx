@@ -120,6 +120,7 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
     <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 py-8">
       <PlayCard
         person={currentPerson}
+        locale={locale}
         labels={{ know: labels.know, heard: labels.heard, dont_know: labels.dont_know }}
         onAnswer={handleAnswer}
         progress={{ current: session.currentIndex + 1, total: session.deck.length }}

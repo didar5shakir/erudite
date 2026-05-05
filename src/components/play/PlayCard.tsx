@@ -15,9 +15,25 @@ interface Progress {
 
 interface PlayCardProps {
   person: Person;
+  locale: string;
   labels: Labels;
   onAnswer: (answer: AnswerType) => void;
   progress: Progress;
+}
+
+function pickDisplayName(person: Person, locale: string): string {
+  if (locale === 'ru') {
+    return person.display_name_ru ?? person.display_name_en ?? person.name;
+  }
+  if (locale === 'kk') {
+    return (
+      person.display_name_kk ??
+      person.display_name_ru ??
+      person.display_name_en ??
+      person.name
+    );
+  }
+  return person.display_name_en ?? person.name;
 }
 
 function formatYears(birthyear: number | null, deathyear: number | null): string | null {
@@ -27,8 +43,9 @@ function formatYears(birthyear: number | null, deathyear: number | null): string
   return `–${deathyear}`;
 }
 
-export default function PlayCard({ person, labels, onAnswer, progress }: PlayCardProps) {
+export default function PlayCard({ person, locale, labels, onAnswer, progress }: PlayCardProps) {
   const years = formatYears(person.birthyear, person.deathyear);
+  const displayName = pickDisplayName(person, locale);
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-6">
@@ -39,7 +56,7 @@ export default function PlayCard({ person, labels, onAnswer, progress }: PlayCar
 
         <div className="bg-neutral-900 rounded-xl shadow-lg p-8 text-center space-y-3">
           <h2 className="text-4xl font-serif font-semibold text-white leading-tight">
-            {person.name}
+            {displayName}
           </h2>
 
           {years && (
