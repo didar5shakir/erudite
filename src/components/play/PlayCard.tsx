@@ -2,6 +2,7 @@
 
 import type { AnswerType, Person } from '@/lib/play/types';
 import { getOccupationLabel, getCountryLabel } from '@/lib/play/localized-labels';
+import { formatYearRange } from '@/lib/play/format-utils';
 
 interface Labels {
   know: string;
@@ -37,15 +38,8 @@ function pickDisplayName(person: Person, locale: string): string {
   return person.display_name_en ?? person.name;
 }
 
-function formatYears(birthyear: number | null, deathyear: number | null): string | null {
-  if (birthyear === null && deathyear === null) return null;
-  if (birthyear !== null && deathyear !== null) return `${birthyear}–${deathyear}`;
-  if (birthyear !== null) return `${birthyear}–`;
-  return `–${deathyear}`;
-}
-
 export default function PlayCard({ person, locale, labels, onAnswer, progress }: PlayCardProps) {
-  const years       = formatYears(person.birthyear, person.deathyear);
+  const years       = formatYearRange(person.birthyear, person.deathyear, locale);
   const displayName = pickDisplayName(person, locale);
   const occupation  = getOccupationLabel(person.occupation, locale);
   const country     = getCountryLabel(person.bplace_country, locale);
