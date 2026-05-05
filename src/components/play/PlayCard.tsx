@@ -1,6 +1,7 @@
 'use client';
 
 import type { AnswerType, Person } from '@/lib/play/types';
+import { getOccupationLabel, getCountryLabel } from '@/lib/play/localized-labels';
 
 interface Labels {
   know: string;
@@ -44,8 +45,10 @@ function formatYears(birthyear: number | null, deathyear: number | null): string
 }
 
 export default function PlayCard({ person, locale, labels, onAnswer, progress }: PlayCardProps) {
-  const years = formatYears(person.birthyear, person.deathyear);
+  const years       = formatYears(person.birthyear, person.deathyear);
   const displayName = pickDisplayName(person, locale);
+  const occupation  = getOccupationLabel(person.occupation, locale);
+  const country     = getCountryLabel(person.bplace_country, locale);
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-6">
@@ -63,12 +66,12 @@ export default function PlayCard({ person, locale, labels, onAnswer, progress }:
             <p className="text-neutral-400 text-lg">{years}</p>
           )}
 
-          {person.occupation && (
-            <p className="text-neutral-300 text-base">{person.occupation}</p>
+          {occupation && (
+            <p className="text-neutral-300 text-base">{occupation}</p>
           )}
 
-          {person.bplace_country && (
-            <p className="text-neutral-500 text-sm">{person.bplace_country}</p>
+          {country && (
+            <p className="text-neutral-500 text-sm">{country}</p>
           )}
         </div>
 
