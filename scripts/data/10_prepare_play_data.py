@@ -29,6 +29,7 @@ ROOT         = Path(__file__).resolve().parents[2]
 IN_PATH      = ROOT / "data" / "processed" / "figures_top_final.csv"
 SEED_PATH    = ROOT / "data" / "processed" / "kz_ca_seed_pool_preview.csv"
 DISPLAY_PATH = ROOT / "data" / "processed" / "figures_display_names.csv"
+MANUAL_PATH  = ROOT / "data" / "manual_display_names.json"
 OUT_DIR      = ROOT / "public" / "data"
 OUT_PATH     = OUT_DIR / "play_pools.json"
 
@@ -97,6 +98,21 @@ for _, row in dn_df.iterrows():
         "display_name_kk": row["display_name_kk"] or None,
     }
 print(f"display_names загружено: {len(display_map):,}")
+
+# Manual overrides имеют приоритет над автоматическими
+print(f"Читаю {MANUAL_PATH} ...")
+manual_list = json.loads(MANUAL_PATH.read_text(encoding="utf-8"))
+manual_map: dict = {}
+for entry in manual_list:
+    qid = entry["wikidata_id"]
+    manual_map[qid] = {
+        "display_name_en": entry.get("display_name_en") or None,
+        "display_name_ru": entry.get("display_name_ru") or None,
+        "display_name_kk": entry.get("display_name_kk") or None,
+    }
+# Применяем: manual_map перезаписывает display_map
+display_map.update(manual_map)
+print(f"Manual overrides: {len(manual_map)} записей применено")
 
 print(f"Читаю {IN_PATH} ...")
 df_full = pd.read_csv(IN_PATH, usecols=READ_COLS)
