@@ -1,7 +1,7 @@
 import type { Person, PlaySession } from './types';
 
 export function getStorageKey(locale: string, region: 'kz' | 'global'): string {
-  return `erudite:play:v1:${locale}:${region}`;
+  return `erudite:play:v2:${locale}:${region}`;
 }
 
 export function createNewSession(
