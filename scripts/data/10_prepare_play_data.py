@@ -25,11 +25,12 @@ import pandas as pd
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-ROOT        = Path(__file__).resolve().parents[2]
-IN_PATH     = ROOT / "data" / "processed" / "figures_top_final.csv"
-SEED_PATH   = ROOT / "data" / "processed" / "kz_ca_seed_pool_preview.csv"
-OUT_DIR     = ROOT / "public" / "data"
-OUT_PATH    = OUT_DIR / "play_pools.json"
+ROOT         = Path(__file__).resolve().parents[2]
+IN_PATH      = ROOT / "data" / "processed" / "figures_top_final.csv"
+SEED_PATH    = ROOT / "data" / "processed" / "kz_ca_seed_pool_preview.csv"
+DISPLAY_PATH = ROOT / "data" / "processed" / "figures_display_names.csv"
+OUT_DIR      = ROOT / "public" / "data"
+OUT_PATH     = OUT_DIR / "play_pools.json"
 
 KEEP_COLS = [
     "wikidata_id", "name", "occupation", "bplace_country",
@@ -59,8 +60,8 @@ CONTROL_FIGURES = [
 ]
 
 
-def to_records(df: pd.DataFrame) -> list:
-    """Конвертирует DataFrame в список dict, убирая NaN/NaT."""
+def to_records(df: pd.DataFrame, display_map: dict) -> list:
+    """Конвертирует DataFrame в список dict, убирая NaN/NaT, добавляя display_name_*."""
     records = []
     for row in df[KEEP_COLS].itertuples(index=False):
         rec = {}
@@ -73,11 +74,29 @@ def to_records(df: pd.DataFrame) -> list:
                 rec[col] = round(float(val), FLOAT_ROUND[col])
             else:
                 rec[col] = val
+        dn = display_map.get(rec["wikidata_id"])
+        rec["display_name_en"] = dn["display_name_en"] if dn else None
+        rec["display_name_ru"] = dn["display_name_ru"] if dn else None
+        rec["display_name_kk"] = dn["display_name_kk"] if dn else None
         records.append(rec)
     return records
 
 
 READ_COLS = KEEP_COLS + ["ru_rank", "kz_rank", "hpi_rank"]
+
+# ── display_names map ─────────────────────────────────────────────────────────
+
+print(f"Читаю {DISPLAY_PATH} ...")
+dn_df = pd.read_csv(DISPLAY_PATH, dtype=str).fillna("")
+display_map: dict = {}
+for _, row in dn_df.iterrows():
+    qid = row["wikidata_id"]
+    display_map[qid] = {
+        "display_name_en": row["display_name_en"] or None,
+        "display_name_ru": row["display_name_ru"] or None,
+        "display_name_kk": row["display_name_kk"] or None,
+    }
+print(f"display_names загружено: {len(display_map):,}")
 
 print(f"Читаю {IN_PATH} ...")
 df_full = pd.read_csv(IN_PATH, usecols=READ_COLS)
@@ -148,11 +167,11 @@ print(f"  kz_ca_top : {len(kz_ca_df):>5,}  (seed={len(seed_ids)}, matched={len(k
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 payload = {
-    "top_5000":  to_records(top_5000.sort_values("global_rank")),
-    "ru_quota":  to_records(ru_quota),
-    "kz_quota":  to_records(kz_quota),
-    "hpi_quota": to_records(hpi_quota),
-    "kz_ca_top": to_records(kz_ca_df),
+    "top_5000":  to_records(top_5000.sort_values("global_rank"), display_map),
+    "ru_quota":  to_records(ru_quota,  display_map),
+    "kz_quota":  to_records(kz_quota,  display_map),
+    "hpi_quota": to_records(hpi_quota, display_map),
+    "kz_ca_top": to_records(kz_ca_df,  display_map),
 }
 
 json_str = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))

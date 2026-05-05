@@ -22,6 +22,9 @@ export interface Person {
   ru_score: number;
   kz_score: number;
   hpi: number;
+  display_name_en?: string | null;
+  display_name_ru?: string | null;
+  display_name_kk?: string | null;
 }
 
 // ── Структура play_pools.json ─────────────────────────────────────────────────
