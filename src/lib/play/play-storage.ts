@@ -1,10 +1,14 @@
 import type { Person, PlaySession } from './types';
 
-export function getStorageKey(locale: string): string {
-  return `erudite:play:v1:${locale}`;
+export function getStorageKey(locale: string, region: 'kz' | 'global'): string {
+  return `erudite:play:v1:${locale}:${region}`;
 }
 
-export function createNewSession(locale: string, deck: Person[]): PlaySession {
+export function createNewSession(
+  locale: string,
+  deck: Person[],
+  region: 'kz' | 'global',
+): PlaySession {
   const now = new Date().toISOString();
   let sessionId: string;
   try {
@@ -27,16 +31,16 @@ export function createNewSession(locale: string, deck: Person[]): PlaySession {
   };
 }
 
-export function saveSession(session: PlaySession): void {
+export function saveSession(session: PlaySession, region: 'kz' | 'global'): void {
   if (typeof window === 'undefined') return;
   const updated: PlaySession = { ...session, updatedAt: new Date().toISOString() };
-  localStorage.setItem(getStorageKey(session.locale), JSON.stringify(updated));
+  localStorage.setItem(getStorageKey(session.locale, region), JSON.stringify(updated));
 }
 
-export function loadSession(locale: string): PlaySession | null {
+export function loadSession(locale: string, region: 'kz' | 'global'): PlaySession | null {
   if (typeof window === 'undefined') return null;
 
-  const key = getStorageKey(locale);
+  const key = getStorageKey(locale, region);
   const raw = localStorage.getItem(key);
   if (raw === null) return null;
 
@@ -74,7 +78,7 @@ export function loadSession(locale: string): PlaySession | null {
   return parsed as PlaySession;
 }
 
-export function clearSession(locale: string): void {
+export function clearSession(locale: string, region: 'kz' | 'global'): void {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem(getStorageKey(locale));
+  localStorage.removeItem(getStorageKey(locale, region));
 }

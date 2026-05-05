@@ -24,6 +24,7 @@ interface Labels {
 interface PlayPageProps {
   initialDeck: Person[];
   locale: string;
+  region: 'kz' | 'global';
   labels: Labels;
 }
 
@@ -39,23 +40,23 @@ function computeCounts(answers: Record<string, Answer>) {
   return { know, heard, dont_know };
 }
 
-export default function PlayPage({ initialDeck, locale, labels }: PlayPageProps) {
+export default function PlayPage({ initialDeck, locale, region, labels }: PlayPageProps) {
   const [session, setSession] = useState<PlaySession | null>(null);
   const startedAt = useRef<number>(Date.now());
 
   useEffect(() => {
-    const existing = loadSession(locale);
+    const existing = loadSession(locale, region);
     if (existing) {
       setSession(existing);
     } else {
-      const fresh = createNewSession(locale, initialDeck);
-      saveSession(fresh);
+      const fresh = createNewSession(locale, initialDeck, region);
+      saveSession(fresh, region);
       setSession(fresh);
     }
     startedAt.current = Date.now();
-  // initialDeck identity is stable (comes from server), locale changes trigger new session
+  // initialDeck identity is stable (comes from server), locale/region changes trigger new session
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locale]);
+  }, [locale, region]);
 
   function handleAnswer(answer: AnswerType) {
     if (!session || session.completed) return;
@@ -76,15 +77,15 @@ export default function PlayPage({ initialDeck, locale, labels }: PlayPageProps)
       completed: isLast,
     };
 
-    saveSession(updated);
+    saveSession(updated, region);
     setSession(updated);
     startedAt.current = Date.now();
   }
 
   function handlePlayAgain() {
-    clearSession(locale);
-    const fresh = createNewSession(locale, initialDeck);
-    saveSession(fresh);
+    clearSession(locale, region);
+    const fresh = createNewSession(locale, initialDeck, region);
+    saveSession(fresh, region);
     setSession(fresh);
     startedAt.current = Date.now();
   }

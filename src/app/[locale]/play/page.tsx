@@ -19,14 +19,24 @@ function loadPools(): PlayPools {
 
 export default async function Page({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
 
+  const { region } = await searchParams;
+  const regionStr = region === 'kz' ? 'kz' : undefined;
+
+  const resolvedRegion: 'kz' | 'global' =
+    regionStr ?? (locale === 'kk' ? 'kz' : 'global');
+
+  const samplerRegion = resolvedRegion === 'kz' ? 'kz' : undefined;
+
   const pools = loadPools();
-  const deck = createMixedSessionDeck(pools);
+  const deck = createMixedSessionDeck(pools, samplerRegion);
 
   const t = await getTranslations('play');
 
@@ -34,6 +44,7 @@ export default async function Page({
     <PlayPage
       initialDeck={deck}
       locale={locale}
+      region={resolvedRegion}
       labels={{
         know: t('know'),
         heard: t('heard'),
