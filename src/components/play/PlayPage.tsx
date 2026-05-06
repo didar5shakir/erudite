@@ -9,6 +9,11 @@ import {
   loadSession,
   saveSession,
 } from '@/lib/play/play-storage';
+import { updateAdaptiveProfile } from '@/lib/play/adaptive-profile';
+import {
+  getOrCreateAdaptiveProfile,
+  saveAdaptiveProfile,
+} from '@/lib/play/adaptive-storage';
 import PlayCard from './PlayCard';
 import PlayResult from './PlayResult';
 
@@ -62,11 +67,12 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
     if (!session || session.completed) return;
 
     const person = session.deck[session.currentIndex];
+    const now = Date.now();
     const newAnswer: Answer = {
       qid: person.wikidata_id,
       answer,
       answeredAt: new Date().toISOString(),
-      responseMs: Date.now() - startedAt.current,
+      responseMs: now - startedAt.current,
     };
 
     const isLast = session.currentIndex + 1 >= session.deck.length;
@@ -79,7 +85,12 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
 
     saveSession(updated, region);
     setSession(updated);
-    startedAt.current = Date.now();
+    startedAt.current = now;
+
+    // Update adaptive profile (separate storage, persists across sessions)
+    const profile = getOrCreateAdaptiveProfile();
+    const updatedProfile = updateAdaptiveProfile(profile, person, answer, { timestamp: now });
+    saveAdaptiveProfile(updatedProfile);
   }
 
   function handlePlayAgain() {
