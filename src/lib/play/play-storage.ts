@@ -1,7 +1,8 @@
 import type { Person, PlaySession } from './types';
+import { SESSION_CARD_COUNT } from './play-sampler';
 
 export function getStorageKey(locale: string, region: 'kz' | 'global'): string {
-  return `erudite:play:v3:${locale}:${region}`;
+  return `erudite:play:v4:${locale}:${region}`;
 }
 
 export function createNewSession(
@@ -61,12 +62,12 @@ export function loadSession(locale: string, region: 'kz' | 'global'): PlaySessio
     obj.version !== 1 ||
     obj.locale !== locale ||
     !Array.isArray(obj.deck) ||
-    (obj.deck as unknown[]).length !== 50 ||
+    (obj.deck as unknown[]).length !== SESSION_CARD_COUNT ||
     !Array.isArray(obj.cardIds) ||
-    (obj.cardIds as unknown[]).length !== 50 ||
+    (obj.cardIds as unknown[]).length !== SESSION_CARD_COUNT ||
     typeof idx !== 'number' ||
     idx < 0 ||
-    idx > 50 ||
+    idx > SESSION_CARD_COUNT ||
     typeof obj.answers !== 'object' ||
     obj.answers === null ||
     typeof obj.completed !== 'boolean'
