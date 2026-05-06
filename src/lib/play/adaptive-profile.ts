@@ -79,10 +79,7 @@ export function getDifficultyAnswerMultiplier(
     return 1.2; // unknown
   }
   if (answer === 'heard') {
-    if (d === 'easy')    return 0.95;
-    if (d === 'medium')  return 1.05;
-    if (d === 'hard')    return 1.15;
-    return 1.0; // unknown
+    return 1.0; // heard doesn't move weights — score 0.5 is tracked but profile unchanged
   }
   // dont_know
   if (d === 'easy')    return 0.5;

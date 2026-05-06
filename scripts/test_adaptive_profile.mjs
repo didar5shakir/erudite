@@ -30,10 +30,7 @@ function getDifficultyAnswerMultiplier(difficultyBucket, answer) {
     return 1.2;
   }
   if (answer === 'heard') {
-    if (d === 'easy')   return 0.95;
-    if (d === 'medium') return 1.05;
-    if (d === 'hard')   return 1.15;
-    return 1.0;
+    return 1.0; // heard does not move weights
   }
   if (d === 'easy')   return 0.5;
   if (d === 'medium') return 0.7;
@@ -283,31 +280,45 @@ console.log('\n── C: Easy person (easy, dont_know) ──');
     p.weights.domain['entertainment'] < p.weights.era['late_20c_births']);
 }
 
-// ── Scenario D: Medium, heard → weak positive signal ─────────────────────────
-console.log('\n── D: Medium + heard ──');
+// ── Scenario D: heard does NOT move weights ───────────────────────────────────
+console.log('\n── D: heard does not move weights ──');
 {
-  const person = {
-    wikidata_id: 'Qtest3',
+  const mkPerson = (qid, diff) => ({
+    wikidata_id: qid,
     occupation: 'MUSICIAN',
     domain: 'entertainment',
     subdomain: 'musician',
     country_tag: 'Germany',
     macro_region: 'western_europe',
     era_bucket: 'industrial_modern',
-    difficulty_bucket: 'medium',
-  };
-  const p = updateAdaptiveProfile(createInitialAdaptiveProfile(), person, 'heard', { timestamp: 4 });
+    difficulty_bucket: diff,
+  });
 
-  // base=1.05 → weak positive
-  check('occupation slightly above 1.0',
-    p.weights.occupation['MUSICIAN'] > 1.0 && p.weights.occupation['MUSICIAN'] < 1.1,
-    approx(p.weights.occupation['MUSICIAN'], 'occ'));
-  check('domain weaker signal',
-    p.weights.domain['entertainment'] > 1.0 && p.weights.domain['entertainment'] < 1.05,
-    approx(p.weights.domain['entertainment'], 'domain'));
-  check('era even weaker',
-    p.weights.era['industrial_modern'] > 1.0 && p.weights.era['industrial_modern'] < 1.04,
-    approx(p.weights.era['industrial_modern'], 'era'));
+  // medium + heard
+  const pm = updateAdaptiveProfile(createInitialAdaptiveProfile(), mkPerson('Qm', 'medium'), 'heard', { timestamp: 4 });
+  check('medium+heard: occupation weight unchanged (multiplier=1.0)',
+    pm.weights.occupation['MUSICIAN'] === undefined || Math.abs(pm.weights.occupation['MUSICIAN'] - 1.0) < 0.0001,
+    approx(pm.weights.occupation['MUSICIAN'], 'occ'));
+  check('medium+heard: domain weight unchanged',
+    pm.weights.domain['entertainment'] === undefined || Math.abs(pm.weights.domain['entertainment'] - 1.0) < 0.0001,
+    approx(pm.weights.domain['entertainment'], 'domain'));
+  check('medium+heard: era weight unchanged',
+    pm.weights.era['industrial_modern'] === undefined || Math.abs(pm.weights.era['industrial_modern'] - 1.0) < 0.0001,
+    approx(pm.weights.era['industrial_modern'], 'era'));
+
+  // hard + heard
+  const ph = updateAdaptiveProfile(createInitialAdaptiveProfile(), mkPerson('Qh', 'hard'), 'heard', { timestamp: 5 });
+  check('hard+heard: occupation weight unchanged',
+    ph.weights.occupation['MUSICIAN'] === undefined || Math.abs(ph.weights.occupation['MUSICIAN'] - 1.0) < 0.0001,
+    approx(ph.weights.occupation['MUSICIAN'], 'occ'));
+
+  // heard still updates stats correctly
+  check('medium+heard: scoreSum = 0.5',
+    Math.abs(pm.stats.scoreSum - 0.5) < 0.0001, `scoreSum=${pm.stats.scoreSum}`);
+  check('medium+heard: heardCount = 1',
+    pm.stats.heardCount === 1);
+  check('medium+heard: totalAnswers = 1',
+    pm.stats.totalAnswers === 1);
 }
 
 // ── Scenario E: 10 hard footballers → MAX_WEIGHT clamp ───────────────────────
