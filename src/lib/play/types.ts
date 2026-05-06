@@ -1,3 +1,53 @@
+// ── Derived tag types ─────────────────────────────────────────────────────────
+
+export type Domain =
+  | 'politics'
+  | 'entertainment'
+  | 'science'
+  | 'literature_thought'
+  | 'sports'
+  | 'art'
+  | 'religion'
+  | 'business_tech'
+  | 'crime_power'
+  | 'other'
+  | 'unknown';
+
+export type MacroRegion =
+  | 'usa_canada'
+  | 'western_europe'
+  | 'ru_cis'
+  | 'kz_ca'
+  | 'east_asia'
+  | 'south_asia'
+  | 'middle_east'
+  | 'north_africa'
+  | 'subsaharan_africa'
+  | 'latin_america'
+  | 'oceania'
+  | 'other_region'
+  | 'unknown';
+
+export type EraBucket =
+  | 'ancient_bc'
+  | 'classical_late_antiquity'
+  | 'medieval'
+  | 'early_modern'
+  | 'industrial_modern'
+  | 'postwar_births'
+  | 'late_20c_births'
+  | 'modern_media_births'
+  | 'digital_births'
+  | 'unknown';
+
+export type DifficultyBucket = 'easy' | 'medium' | 'hard' | 'unknown';
+
+export type ContentSensitivity =
+  | 'normal'
+  | 'adult_excluded'
+  | 'crime_sensitive'
+  | 'scandal_sensitive';
+
 // ── InclusionSource ───────────────────────────────────────────────────────────
 
 export type InclusionSource =
@@ -26,6 +76,14 @@ export interface Person {
   display_name_ru?: string | null;
   display_name_kk?: string | null;
   gender?: string | null;
+  // derived tags (added in Stage 5 derived-tags sprint)
+  domain: Domain;
+  subdomain: string | null;
+  country_tag: string | null;
+  macro_region: MacroRegion;
+  era_bucket: EraBucket;
+  difficulty_bucket: DifficultyBucket;
+  content_sensitivity: ContentSensitivity;
 }
 
 // ── Структура play_pools.json ─────────────────────────────────────────────────

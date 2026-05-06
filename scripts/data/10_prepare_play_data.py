@@ -25,6 +25,13 @@ import pandas as pd
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+# Derived-tags helper (same directory)
+sys.path.insert(0, str(Path(__file__).parent))
+from _derived_tags import (
+    get_domain, get_subdomain, get_macro_region,
+    get_era_bucket, get_difficulty_bucket, get_content_sensitivity,
+)
+
 ROOT         = Path(__file__).resolve().parents[2]
 IN_PATH      = ROOT / "data" / "processed" / "figures_top_final.csv"
 SEED_PATH    = ROOT / "data" / "processed" / "kz_ca_seed_pool_preview.csv"
@@ -84,6 +91,19 @@ def to_records(df: pd.DataFrame, display_map: dict) -> list:
         rec["display_name_en"] = dn["display_name_en"] if dn else None
         rec["display_name_ru"] = dn["display_name_ru"] if dn else None
         rec["display_name_kk"] = dn["display_name_kk"] if dn else None
+
+        # Derived tags
+        occ     = rec.get("occupation")
+        country = rec.get("bplace_country")
+        qid     = rec["wikidata_id"]
+        rec["domain"]              = get_domain(occ)
+        rec["subdomain"]           = get_subdomain(occ)
+        rec["country_tag"]         = country if country else None
+        rec["macro_region"]        = get_macro_region(country)
+        rec["era_bucket"]          = get_era_bucket(rec.get("birthyear"))
+        rec["difficulty_bucket"]   = get_difficulty_bucket(rec.get("global_rank"))
+        rec["content_sensitivity"] = get_content_sensitivity(qid, occ)
+
         records.append(rec)
     return records
 
