@@ -27,7 +27,17 @@
     "progress": "{current} / {total}",
     "result_title": "You recognized {count} out of 50",
     "play_again": "Play again",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "result_estimate_pre": "Based on the Erudite model, you know approximately",
+    "result_estimate_post": "famous people",
+    "result_range_label": "Range:",
+    "result_level_label": "Level:",
+    "result_strong_title": "Strong areas",
+    "result_weak_title": "Areas to grow",
+    "result_strong_empty": "None yet — answer more questions",
+    "result_weak_empty": "None yet — answer more questions",
+    "result_disclaimer": "Estimate based on your first {count} answers. Accuracy improves with each session.",
+    "result_preliminary": "Preliminary result — play more sessions to refine"
   },
   "regions": {
     "north_america": "North America",

@@ -21,6 +21,7 @@ import {
   getInitialSessionCounts,
 } from '@/lib/play/play-sampler';
 import type { PlayPoolsExtended } from '@/lib/play/play-sampler';
+import { calculateResultEstimate } from '@/lib/play/result-estimate';
 import PlayCard from './PlayCard';
 import PlayResult from './PlayResult';
 
@@ -28,9 +29,19 @@ interface Labels {
   know: string;
   heard: string;
   dont_know: string;
-  result_title: string;  // шаблон с {count}: "You recognized {count} out of 50"
+  result_title: string;
   play_again: string;
   loading: string;
+  result_estimate_pre: string;
+  result_estimate_post: string;
+  result_range_label: string;
+  result_level_label: string;
+  result_strong_title: string;
+  result_weak_title: string;
+  result_strong_empty: string;
+  result_weak_empty: string;
+  result_disclaimer: string;
+  result_preliminary: string;
 }
 
 interface PlayPageProps {
@@ -38,18 +49,6 @@ interface PlayPageProps {
   locale: string;
   region: 'kz' | 'global';
   labels: Labels;
-}
-
-function computeCounts(answers: Record<string, Answer>) {
-  let know = 0;
-  let heard = 0;
-  let dont_know = 0;
-  for (const a of Object.values(answers)) {
-    if (a.answer === 'know') know++;
-    else if (a.answer === 'heard') heard++;
-    else dont_know++;
-  }
-  return { know, heard, dont_know };
 }
 
 export default function PlayPage({ initialDeck, locale, region, labels }: PlayPageProps) {
@@ -148,15 +147,28 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
   }
 
   if (session.completed) {
-    const counts = computeCounts(session.answers);
-    const resultTitle = labels.result_title.replace('{count}', String(counts.know));
+    const profile = getOrCreateAdaptiveProfile();
+    const estimate = calculateResultEstimate(session.deck, session.answers, profile);
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 py-8">
         <PlayResult
-          counts={counts}
-          total={session.deck.length}
-          labels={{ know: labels.know, heard: labels.heard, dont_know: labels.dont_know }}
-          resultTitle={resultTitle}
+          estimate={estimate}
+          locale={locale}
+          labels={{
+            know:                labels.know,
+            heard:               labels.heard,
+            dont_know:           labels.dont_know,
+            result_estimate_pre: labels.result_estimate_pre,
+            result_estimate_post:labels.result_estimate_post,
+            result_range_label:  labels.result_range_label,
+            result_level_label:  labels.result_level_label,
+            result_strong_title: labels.result_strong_title,
+            result_weak_title:   labels.result_weak_title,
+            result_strong_empty: labels.result_strong_empty,
+            result_weak_empty:   labels.result_weak_empty,
+            result_disclaimer:   labels.result_disclaimer,
+            result_preliminary:  labels.result_preliminary,
+          }}
           playAgainLabel={labels.play_again}
           onPlayAgain={handlePlayAgain}
         />

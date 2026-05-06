@@ -46,12 +46,22 @@ export default async function Page({
       locale={locale}
       region={resolvedRegion}
       labels={{
-        know: t('know'),
-        heard: t('heard'),
-        dont_know: t('dont_know'),
-        result_title: t.raw('result_title'),
-        play_again: t('play_again'),
-        loading: t('loading'),
+        know:                t('know'),
+        heard:               t('heard'),
+        dont_know:           t('dont_know'),
+        result_title:        t.raw('result_title'),
+        play_again:          t('play_again'),
+        loading:             t('loading'),
+        result_estimate_pre: t('result_estimate_pre'),
+        result_estimate_post:t('result_estimate_post'),
+        result_range_label:  t('result_range_label'),
+        result_level_label:  t('result_level_label'),
+        result_strong_title: t('result_strong_title'),
+        result_weak_title:   t('result_weak_title'),
+        result_strong_empty: t('result_strong_empty'),
+        result_weak_empty:   t('result_weak_empty'),
+        result_disclaimer:   t.raw('result_disclaimer'),
+        result_preliminary:  t('result_preliminary'),
       }}
     />
   );

@@ -277,3 +277,81 @@ export function getCountryLabel(
   if (locale === "kk") return label.kk || label.ru || label.en || value;
   return label.en || value;
 }
+
+// ── Zone labels ───────────────────────────────────────────────────────────────
+
+type L3 = { ru: string; kk: string; en: string };
+
+const DOMAIN_ZONE_LABELS: Record<string, L3> = {
+  sports:             { ru: 'Спорт',                   kk: 'Спорт',                              en: 'Sports' },
+  entertainment:      { ru: 'Развлечения',              kk: 'Ойын-сауық',                         en: 'Entertainment' },
+  politics:           { ru: 'Политика',                 kk: 'Саясат',                             en: 'Politics' },
+  science:            { ru: 'Наука',                    kk: 'Ғылым',                              en: 'Science' },
+  literature_thought: { ru: 'Лит. и мысль',             kk: 'Әдебиет және ой',                    en: 'Literature & Thought' },
+  religion:           { ru: 'Религия',                  kk: 'Дін',                                en: 'Religion' },
+  art:                { ru: 'Искусство',                kk: 'Өнер',                               en: 'Art' },
+  business_tech:      { ru: 'Бизнес и тех.',            kk: 'Бизнес және тех.',                   en: 'Business & Tech' },
+  crime_power:        { ru: 'Криминал и власть',        kk: 'Қылмыс және билік',                  en: 'Crime & Power' },
+  other:              { ru: 'Другое',                   kk: 'Басқа',                              en: 'Other' },
+};
+
+const SUBDOMAIN_ZONE_LABELS: Record<string, L3> = {
+  football:     { ru: 'Футбол',      kk: 'Футбол',       en: 'Football' },
+  actor:        { ru: 'Актёры',      kk: 'Актерлер',     en: 'Actors' },
+  singer:       { ru: 'Певцы',       kk: 'Әншілер',      en: 'Singers' },
+  musician:     { ru: 'Музыканты',   kk: 'Музыканттар',  en: 'Musicians' },
+  film_director: { ru: 'Режиссёры',  kk: 'Режиссерлер',  en: 'Directors' },
+  boxing:       { ru: 'Бокс',        kk: 'Бокс',         en: 'Boxing' },
+  tennis:       { ru: 'Теннис',      kk: 'Теннис',       en: 'Tennis' },
+  basketball:   { ru: 'Баскетбол',   kk: 'Баскетбол',    en: 'Basketball' },
+  motorsport:   { ru: 'Автоспорт',   kk: 'Автоспорт',    en: 'Motorsport' },
+  chess:        { ru: 'Шахматы',     kk: 'Шахмат',       en: 'Chess' },
+};
+
+const MACRO_REGION_ZONE_LABELS: Record<string, L3> = {
+  usa_canada:        { ru: 'США и Канада',           kk: 'АҚШ және Канада',                  en: 'USA & Canada' },
+  western_europe:    { ru: 'Западная Европа',        kk: 'Батыс Еуропа',                     en: 'Western Europe' },
+  ru_cis:            { ru: 'Россия и СНГ',           kk: 'Ресей және ТМД',                   en: 'Russia & CIS' },
+  kz_ca:             { ru: 'Казахстан и ЦА',         kk: 'Қазақстан және Орталық Азия',      en: 'Kazakhstan & CA' },
+  east_asia:         { ru: 'Восточная Азия',         kk: 'Шығыс Азия',                       en: 'East Asia' },
+  south_asia:        { ru: 'Южная Азия',             kk: 'Оңтүстік Азия',                    en: 'South Asia' },
+  middle_east:       { ru: 'Ближний Восток',         kk: 'Таяу Шығыс',                       en: 'Middle East' },
+  north_africa:      { ru: 'Северная Африка',        kk: 'Солтүстік Африка',                 en: 'North Africa' },
+  subsaharan_africa: { ru: 'Африка южнее Сахары',    kk: 'Сахарадан оңтүстік Африка',        en: 'Sub-Saharan Africa' },
+  latin_america:     { ru: 'Латинская Америка',      kk: 'Латын Америкасы',                  en: 'Latin America' },
+  oceania:           { ru: 'Океания',                kk: 'Мұхиттық',                         en: 'Oceania' },
+  other_region:      { ru: 'Другие регионы',         kk: 'Басқа аймақтар',                   en: 'Other Regions' },
+};
+
+const ERA_ZONE_LABELS: Record<string, L3> = {
+  ancient_bc:              { ru: 'Древний мир',          kk: 'Ежелгі дүние',          en: 'Ancient World' },
+  classical_late_antiquity: { ru: 'Античность',          kk: 'Антикалық дәуір',       en: 'Classical Antiquity' },
+  medieval:                { ru: 'Средневековье',         kk: 'Орта ғасырлар',         en: 'Medieval' },
+  early_modern:            { ru: 'Новое время',           kk: 'Жаңа заман',            en: 'Early Modern' },
+  industrial_modern:       { ru: 'Промышленная эпоха',    kk: 'Өнеркәсіп дәуірі',     en: 'Industrial Era' },
+  postwar_births:          { ru: 'Послевоенное',          kk: 'Соғыстан кейінгі',      en: 'Postwar' },
+  late_20c_births:         { ru: 'Конец XX века',         kk: 'XX ғасыр соңы',         en: 'Late 20th C.' },
+  modern_media_births:     { ru: 'Медиаэпоха',            kk: 'Медиа дәуірі',          en: 'Media Age' },
+  digital_births:          { ru: 'Цифровое поколение',    kk: 'Цифрлық ұрпақ',        en: 'Digital Age' },
+};
+
+function pickL3(map: Record<string, L3>, tag: string, locale: string): string {
+  const l = map[tag];
+  if (!l) return tag;
+  if (locale === 'ru') return l.ru;
+  if (locale === 'kk') return l.kk;
+  return l.en;
+}
+
+export function formatZoneLabel(
+  axis: 'subdomain' | 'domain' | 'country' | 'macroRegion' | 'era',
+  tag: string,
+  locale: string,
+): string {
+  if (axis === 'domain')      return pickL3(DOMAIN_ZONE_LABELS,        tag, locale);
+  if (axis === 'subdomain')   return pickL3(SUBDOMAIN_ZONE_LABELS,     tag, locale);
+  if (axis === 'macroRegion') return pickL3(MACRO_REGION_ZONE_LABELS,  tag, locale);
+  if (axis === 'era')         return pickL3(ERA_ZONE_LABELS,           tag, locale);
+  // country: use existing COUNTRY_LABELS
+  return getCountryLabel(tag, locale) || tag;
+}

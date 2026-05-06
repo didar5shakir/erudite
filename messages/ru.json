@@ -27,7 +27,17 @@
     "progress": "{current} / {total}",
     "result_title": "Ты узнал {count} из 50",
     "play_again": "Пройти ещё раз",
-    "loading": "Загрузка…"
+    "loading": "Загрузка…",
+    "result_estimate_pre": "По модели Erudite ты узнаёшь примерно",
+    "result_estimate_post": "известных людей",
+    "result_range_label": "Диапазон:",
+    "result_level_label": "Уровень:",
+    "result_strong_title": "Сильные зоны",
+    "result_weak_title": "Зоны для роста",
+    "result_strong_empty": "Пока нет — ответь на больше вопросов",
+    "result_weak_empty": "Пока нет — ответь на больше вопросов",
+    "result_disclaimer": "Оценка основана на первых {count} ответах. Точность растёт с каждой сессией.",
+    "result_preliminary": "Предварительный результат — пройди ещё сессии для уточнения"
   },
   "regions": {
     "north_america": "Северная Америка",

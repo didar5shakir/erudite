@@ -27,7 +27,17 @@
     "progress": "{current} / {total}",
     "result_title": "Сіз 50-нен {count} тұлғаны таныдыңыз",
     "play_again": "Қайта ойнау",
-    "loading": "Жүктелуде…"
+    "loading": "Жүктелуде…",
+    "result_estimate_pre": "Erudite моделі бойынша сіз шамамен",
+    "result_estimate_post": "белгілі тұлғаны білесіз",
+    "result_range_label": "Диапазон:",
+    "result_level_label": "Деңгей:",
+    "result_strong_title": "Күшті тақырыптар",
+    "result_weak_title": "Өсу аймақтары",
+    "result_strong_empty": "Әзірге жоқ — көбірек жауап беріңіз",
+    "result_weak_empty": "Әзірге жоқ — көбірек жауап беріңіз",
+    "result_disclaimer": "Баға алғашқы {count} жауапқа негізделген. Дәлдік әр сессиямен артады.",
+    "result_preliminary": "Алдын ала нәтиже — нақтылау үшін тағы сессия өтіңіз"
   },
   "regions": {
     "north_america": "Солтүстік Америка",
