@@ -14,6 +14,13 @@ import {
   getOrCreateAdaptiveProfile,
   saveAdaptiveProfile,
 } from '@/lib/play/adaptive-storage';
+import {
+  CALIB_SIZE,
+  ADAPTIVE_TAIL_SIZE,
+  createAdaptiveTail,
+  getInitialSessionCounts,
+} from '@/lib/play/play-sampler';
+import type { PlayPoolsExtended } from '@/lib/play/play-sampler';
 import PlayCard from './PlayCard';
 import PlayResult from './PlayResult';
 
@@ -47,7 +54,15 @@ function computeCounts(answers: Record<string, Answer>) {
 
 export default function PlayPage({ initialDeck, locale, region, labels }: PlayPageProps) {
   const [session, setSession] = useState<PlaySession | null>(null);
+  const [pools, setPools] = useState<PlayPoolsExtended | null>(null);
   const startedAt = useRef<number>(Date.now());
+
+  useEffect(() => {
+    fetch('/data/play_pools.json')
+      .then(r => r.json())
+      .then((data: PlayPoolsExtended) => setPools(data))
+      .catch(() => { /* pools unavailable — adaptive tail skipped */ });
+  }, []);
 
   useEffect(() => {
     const existing = loadSession(locale, region);
@@ -76,21 +91,44 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
     };
 
     const isLast = session.currentIndex + 1 >= session.deck.length;
-    const updated: PlaySession = {
+    let updated: PlaySession = {
       ...session,
       answers: { ...session.answers, [person.wikidata_id]: newAnswer },
       currentIndex: isLast ? session.deck.length : session.currentIndex + 1,
       completed: isLast,
     };
 
-    saveSession(updated, region);
-    setSession(updated);
-    startedAt.current = now;
-
     // Update adaptive profile (separate storage, persists across sessions)
     const profile = getOrCreateAdaptiveProfile();
     const updatedProfile = updateAdaptiveProfile(profile, person, answer, { timestamp: now });
     saveAdaptiveProfile(updatedProfile);
+
+    // After the 30th card (last calibration card), replace the tail with adaptive picks
+    if (
+      session.currentIndex === CALIB_SIZE - 1 &&
+      !session.adaptiveTailGenerated &&
+      pools !== null
+    ) {
+      const calibCards = updated.deck.slice(0, CALIB_SIZE);
+      const calibUsedIds = new Set(calibCards.map(p => p.wikidata_id));
+      const sessionCounts = getInitialSessionCounts(calibCards);
+      const adaptiveTail = createAdaptiveTail(
+        pools, region, calibUsedIds, updatedProfile, sessionCounts,
+      );
+      if (adaptiveTail.length === ADAPTIVE_TAIL_SIZE) {
+        const newDeck = [...calibCards, ...adaptiveTail];
+        updated = {
+          ...updated,
+          deck:                  newDeck,
+          cardIds:               newDeck.map(p => p.wikidata_id),
+          adaptiveTailGenerated: true,
+        };
+      }
+    }
+
+    saveSession(updated, region);
+    setSession(updated);
+    startedAt.current = now;
   }
 
   function handlePlayAgain() {

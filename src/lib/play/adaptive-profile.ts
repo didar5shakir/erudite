@@ -222,3 +222,35 @@ export function updateAdaptiveProfile(
     answers: [...profile.answers, record],
   };
 }
+
+// ── Card fit score ────────────────────────────────────────────────────────────
+
+export function getCardFitScore(
+  person: Pick<Person,
+    | 'occupation'
+    | 'subdomain'
+    | 'country_tag'
+    | 'domain'
+    | 'macro_region'
+    | 'era_bucket'
+  >,
+  profile: AdaptiveProfile,
+): number {
+  let wSum = 0;
+  let score = 0;
+
+  function add(w: number, key: keyof AdaptiveWeights, tag: string | null | undefined): void {
+    if (!isValidTag(tag)) return;
+    wSum  += w;
+    score += w * (profile.weights[key][tag] ?? 1.0);
+  }
+
+  add(0.25, 'occupation',  person.occupation  );
+  add(0.25, 'subdomain',   person.subdomain   );
+  add(0.20, 'country',     person.country_tag );
+  add(0.10, 'domain',      person.domain      );
+  add(0.10, 'macroRegion', person.macro_region);
+  add(0.10, 'era',         person.era_bucket  );
+
+  return wSum === 0 ? 1.0 : score / wSum;
+}

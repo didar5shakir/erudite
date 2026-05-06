@@ -1,12 +1,29 @@
 import type { Person, PlayPools } from './types';
 import { SENSITIVE_OCCUPATIONS } from './localized-labels';
+import { getCardFitScore } from './adaptive-profile';
+import type { AdaptiveProfile } from './adaptive-profile';
 
 export const SESSION_CARD_COUNT = 100;
-export const CALIB_SIZE = 30;
+export const CALIB_SIZE         = 30;
+export const ADAPTIVE_TAIL_SIZE      = 70;
+export const ADAPTIVE_DOMAIN_MAX     = 30;
+export const ADAPTIVE_SUBDOMAIN_MAX  = 20;
+export const ADAPTIVE_COUNTRY_MAX    = 20;
+export const ADAPTIVE_SOFT_MAX       = 2;
+export const TOP_K                   = 200;
+export const EXPLORATION_RATIO_EARLY = 0.20;
+export const EXPLORATION_RATIO_LATE  = 0.10;
 
-// Local extension — kz_ca_top lives in JSON but not in shared types.ts
-interface PlayPoolsExtended extends PlayPools {
+// kz_ca_top lives in JSON but not in shared types.ts
+export interface PlayPoolsExtended extends PlayPools {
   kz_ca_top?: Person[];
+}
+
+export interface SessionCounts {
+  softSensitiveCount: number;
+  domainCount:        Record<string, number>;
+  subdomainCount:     Record<string, number>;
+  countryCount:       Record<string, number>;
 }
 
 // ── Fisher-Yates shuffle ──────────────────────────────────────────────────────
@@ -294,4 +311,129 @@ export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: 'kz'):
 
   // calib is already shuffled; shuffle remaining before appending
   return [...calib, ...shuffle(remaining)];
+}
+
+// ── Adaptive tail helpers ─────────────────────────────────────────────────────
+
+export function getInitialSessionCounts(calib: Person[]): SessionCounts {
+  const domainCount:    Record<string, number> = {};
+  const subdomainCount: Record<string, number> = {};
+  const countryCount:   Record<string, number> = {};
+  let softSensitiveCount = 0;
+
+  for (const p of calib) {
+    const d = p.domain || 'unknown';
+    domainCount[d] = (domainCount[d] ?? 0) + 1;
+    if (p.subdomain)   subdomainCount[p.subdomain]   = (subdomainCount[p.subdomain]   ?? 0) + 1;
+    if (p.country_tag) countryCount[p.country_tag]   = (countryCount[p.country_tag]   ?? 0) + 1;
+    if (p.content_sensitivity === 'crime_sensitive' ||
+        p.content_sensitivity === 'scandal_sensitive') softSensitiveCount++;
+  }
+
+  return { softSensitiveCount, domainCount, subdomainCount, countryCount };
+}
+
+export function createAdaptiveTail(
+  pools:         PlayPoolsExtended,
+  region:        'kz' | 'global' | undefined,
+  usedIds:       Set<string>,
+  profile:       AdaptiveProfile,
+  sessionCounts: SessionCounts,
+): Person[] {
+  const safe: PlayPoolsExtended = {
+    top_30000: pools.top_30000.filter(p => !isSensitivePerson(p)),
+    ru_quota:  pools.ru_quota.filter(p  => !isSensitivePerson(p)),
+    kz_quota:  pools.kz_quota.filter(p  => !isSensitivePerson(p)),
+    hpi_quota: pools.hpi_quota.filter(p => !isSensitivePerson(p)),
+    kz_ca_top: pools.kz_ca_top?.filter(p => !isSensitivePerson(p)),
+  };
+
+  // Unified candidate pool, deduped, excluding already-used
+  const seenQids = new Set<string>();
+  const srcOrder: Person[][] = region === 'kz'
+    ? [safe.kz_ca_top ?? [], safe.top_30000, safe.ru_quota, safe.kz_quota, safe.hpi_quota]
+    : [safe.top_30000, safe.ru_quota, safe.kz_quota, safe.hpi_quota];
+
+  const candidates: Person[] = [];
+  for (const src of srcOrder) {
+    for (const p of src) {
+      if (!seenQids.has(p.wikidata_id) && !usedIds.has(p.wikidata_id)) {
+        seenQids.add(p.wikidata_id);
+        candidates.push(p);
+      }
+    }
+  }
+
+  // Score all candidates once, sort descending
+  const scored = candidates
+    .map(p => ({ person: p, score: getCardFitScore(p, profile) }))
+    .sort((a, b) => b.score - a.score);
+
+  // Mutable cap counters (copy from sessionCounts so callee state is isolated)
+  const domainCount    = { ...sessionCounts.domainCount };
+  const subdomainCount = { ...sessionCounts.subdomainCount };
+  const countryCount   = { ...sessionCounts.countryCount };
+  let softSensitiveCount = sessionCounts.softSensitiveCount;
+
+  function isCapBlocked(p: Person): boolean {
+    const d = p.domain || 'unknown';
+    if ((domainCount[d]   ?? 0) >= ADAPTIVE_DOMAIN_MAX)    return true;
+    if (p.subdomain   && (subdomainCount[p.subdomain]   ?? 0) >= ADAPTIVE_SUBDOMAIN_MAX) return true;
+    if (p.country_tag && (countryCount[p.country_tag]   ?? 0) >= ADAPTIVE_COUNTRY_MAX)  return true;
+    const soft = p.content_sensitivity === 'crime_sensitive' ||
+                 p.content_sensitivity === 'scandal_sensitive';
+    if (soft && softSensitiveCount >= ADAPTIVE_SOFT_MAX) return true;
+    return false;
+  }
+
+  function consume(p: Person): void {
+    usedIds.add(p.wikidata_id);
+    const d = p.domain || 'unknown';
+    domainCount[d] = (domainCount[d] ?? 0) + 1;
+    if (p.subdomain)   subdomainCount[p.subdomain]   = (subdomainCount[p.subdomain]   ?? 0) + 1;
+    if (p.country_tag) countryCount[p.country_tag]   = (countryCount[p.country_tag]   ?? 0) + 1;
+    const soft = p.content_sensitivity === 'crime_sensitive' ||
+                 p.content_sensitivity === 'scandal_sensitive';
+    if (soft) softSensitiveCount++;
+  }
+
+  const tail: Person[] = [];
+
+  function fillStage(targetSize: number, explorationRatio: number): void {
+    const nExploit = Math.round(targetSize * (1 - explorationRatio));
+    const nExplore = targetSize - nExploit;
+
+    // Exploit: greedily pick from top of scored list with live cap check
+    const exploitCards: Person[] = [];
+    for (const { person: p } of scored) {
+      if (exploitCards.length >= nExploit) break;
+      if (!usedIds.has(p.wikidata_id) && !isCapBlocked(p)) {
+        exploitCards.push(p);
+        consume(p);
+      }
+    }
+
+    // Explore: random from remaining eligible (cap state updated by exploit picks)
+    const exploitIds = new Set(exploitCards.map(p => p.wikidata_id));
+    const explorePool = shuffle(
+      scored.map(s => s.person).filter(p =>
+        !usedIds.has(p.wikidata_id) && !exploitIds.has(p.wikidata_id) && !isCapBlocked(p),
+      ),
+    );
+    const exploreCards: Person[] = [];
+    for (const p of explorePool) {
+      if (exploreCards.length >= nExplore) break;
+      if (!isCapBlocked(p)) {
+        exploreCards.push(p);
+        consume(p);
+      }
+    }
+
+    tail.push(...shuffle([...exploitCards, ...exploreCards]));
+  }
+
+  fillStage(20, EXPLORATION_RATIO_EARLY); // cards 31–50
+  fillStage(50, EXPLORATION_RATIO_LATE);  // cards 51–100
+
+  return tail;
 }

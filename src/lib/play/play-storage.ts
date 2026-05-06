@@ -2,7 +2,7 @@ import type { Person, PlaySession } from './types';
 import { SESSION_CARD_COUNT } from './play-sampler';
 
 export function getStorageKey(locale: string, region: 'kz' | 'global'): string {
-  return `erudite:play:v4:${locale}:${region}`;
+  return `erudite:play:v5:${locale}:${region}`;
 }
 
 export function createNewSession(

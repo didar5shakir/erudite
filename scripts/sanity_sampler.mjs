@@ -28,6 +28,15 @@ const CALIB_KZ_CA_TARGET  = 6;
 const CALIB_KZ_CA_MAX     = 8;
 const KZ_CA_REMAINING     = 24;
 
+const ADAPTIVE_TAIL_SIZE      = 70;
+const ADAPTIVE_DOMAIN_MAX     = 30;
+const ADAPTIVE_SUBDOMAIN_MAX  = 20;
+const ADAPTIVE_COUNTRY_MAX    = 20;
+const ADAPTIVE_SOFT_MAX       = 2;
+const TOP_K                   = 200;
+const EXPLORATION_RATIO_EARLY = 0.20;
+const EXPLORATION_RATIO_LATE  = 0.10;
+
 const TOP_BUCKETS_70 = [
   { min: 1,    max: 100,  need: 14 },
   { min: 101,  max: 500,  need: 14 },
@@ -218,6 +227,135 @@ function createDeck(region) {
   return { deck: [...calib, ...shuffle(remaining)], relaxLog };
 }
 
+// ── Adaptive helpers (mirrors adaptive-profile.ts + play-sampler.ts) ─────────
+
+function isValidTag(v) { return !!v && v !== 'unknown'; }
+
+function getCardFitScore(person, profile) {
+  let wSum = 0, score = 0;
+  function add(w, key, tag) {
+    if (!isValidTag(tag)) return;
+    wSum  += w;
+    score += w * (profile.weights[key][tag] ?? 1.0);
+  }
+  add(0.25, 'occupation',  person.occupation  );
+  add(0.25, 'subdomain',   person.subdomain   );
+  add(0.20, 'country',     person.country_tag );
+  add(0.10, 'domain',      person.domain      );
+  add(0.10, 'macroRegion', person.macro_region);
+  add(0.10, 'era',         person.era_bucket  );
+  return wSum === 0 ? 1.0 : score / wSum;
+}
+
+function getInitialSessionCounts(calib) {
+  const domainCount = {}, subdomainCount = {}, countryCount = {};
+  let softSensitiveCount = 0;
+  for (const p of calib) {
+    const d = p.domain || 'unknown';
+    domainCount[d] = (domainCount[d] ?? 0) + 1;
+    if (p.subdomain)   subdomainCount[p.subdomain]   = (subdomainCount[p.subdomain]   ?? 0) + 1;
+    if (p.country_tag) countryCount[p.country_tag]   = (countryCount[p.country_tag]   ?? 0) + 1;
+    if (p.content_sensitivity === 'crime_sensitive' ||
+        p.content_sensitivity === 'scandal_sensitive') softSensitiveCount++;
+  }
+  return { softSensitiveCount, domainCount, subdomainCount, countryCount };
+}
+
+function createAdaptiveTail(poolsArg, region, usedIds, profile, sessionCounts) {
+  const safe = {
+    top_30000: poolsArg.top_30000.filter(p => !isSensitive(p)),
+    ru_quota:  poolsArg.ru_quota.filter(p  => !isSensitive(p)),
+    kz_quota:  poolsArg.kz_quota.filter(p  => !isSensitive(p)),
+    hpi_quota: poolsArg.hpi_quota.filter(p => !isSensitive(p)),
+    kz_ca_top: (poolsArg.kz_ca_top ?? []).filter(p => !isSensitive(p)),
+  };
+
+  const seenQids = new Set();
+  const srcOrder = region === 'kz'
+    ? [safe.kz_ca_top, safe.top_30000, safe.ru_quota, safe.kz_quota, safe.hpi_quota]
+    : [safe.top_30000, safe.ru_quota, safe.kz_quota, safe.hpi_quota];
+
+  const candidates = [];
+  for (const src of srcOrder) {
+    for (const p of src) {
+      if (!seenQids.has(p.wikidata_id) && !usedIds.has(p.wikidata_id)) {
+        seenQids.add(p.wikidata_id);
+        candidates.push(p);
+      }
+    }
+  }
+
+  const scored = candidates
+    .map(p => ({ person: p, score: getCardFitScore(p, profile) }))
+    .sort((a, b) => b.score - a.score);
+
+  const domainCount    = { ...sessionCounts.domainCount };
+  const subdomainCount = { ...sessionCounts.subdomainCount };
+  const countryCount   = { ...sessionCounts.countryCount };
+  let softSensitiveCount = sessionCounts.softSensitiveCount;
+
+  function isCapBlocked(p) {
+    const d = p.domain || 'unknown';
+    if ((domainCount[d]   ?? 0) >= ADAPTIVE_DOMAIN_MAX)    return true;
+    if (p.subdomain   && (subdomainCount[p.subdomain]   ?? 0) >= ADAPTIVE_SUBDOMAIN_MAX) return true;
+    if (p.country_tag && (countryCount[p.country_tag]   ?? 0) >= ADAPTIVE_COUNTRY_MAX)  return true;
+    const soft = p.content_sensitivity === 'crime_sensitive' ||
+                 p.content_sensitivity === 'scandal_sensitive';
+    if (soft && softSensitiveCount >= ADAPTIVE_SOFT_MAX) return true;
+    return false;
+  }
+
+  function consume(p) {
+    usedIds.add(p.wikidata_id);
+    const d = p.domain || 'unknown';
+    domainCount[d] = (domainCount[d] ?? 0) + 1;
+    if (p.subdomain)   subdomainCount[p.subdomain]   = (subdomainCount[p.subdomain]   ?? 0) + 1;
+    if (p.country_tag) countryCount[p.country_tag]   = (countryCount[p.country_tag]   ?? 0) + 1;
+    const soft = p.content_sensitivity === 'crime_sensitive' ||
+                 p.content_sensitivity === 'scandal_sensitive';
+    if (soft) softSensitiveCount++;
+  }
+
+  const tail = [];
+
+  function fillStage(targetSize, explorationRatio) {
+    const nExploit = Math.round(targetSize * (1 - explorationRatio));
+    const nExplore = targetSize - nExploit;
+
+    // Exploit: greedily pick from top of scored list with live cap check
+    const exploitCards = [];
+    for (const { person: p } of scored) {
+      if (exploitCards.length >= nExploit) break;
+      if (!usedIds.has(p.wikidata_id) && !isCapBlocked(p)) {
+        exploitCards.push(p);
+        consume(p);
+      }
+    }
+
+    // Explore: random from remaining eligible (cap state updated by exploit picks)
+    const exploitIds = new Set(exploitCards.map(p => p.wikidata_id));
+    const explorePool = shuffle(
+      scored.map(s => s.person).filter(p =>
+        !usedIds.has(p.wikidata_id) && !exploitIds.has(p.wikidata_id) && !isCapBlocked(p),
+      ),
+    );
+    const exploreCards = [];
+    for (const p of explorePool) {
+      if (exploreCards.length >= nExplore) break;
+      if (!isCapBlocked(p)) {
+        exploreCards.push(p);
+        consume(p);
+      }
+    }
+
+    tail.push(...shuffle([...exploitCards, ...exploreCards]));
+  }
+
+  fillStage(20, EXPLORATION_RATIO_EARLY);
+  fillStage(50, EXPLORATION_RATIO_LATE);
+  return tail;
+}
+
 // ── Test harness ──────────────────────────────────────────────────────────────
 
 let passed = 0, failed = 0;
@@ -349,6 +487,115 @@ function runSuite(label, region) {
 
 runSuite('Default mode', undefined);
 runSuite('region=kz',    'kz');
+
+// ── Adaptive tail tests ───────────────────────────────────────────────────────
+
+function makeProfile(weights) {
+  return {
+    version: 1,
+    weights: {
+      domain:      {},
+      occupation:  {},
+      subdomain:   {},
+      country:     {},
+      macroRegion: {},
+      era:         {},
+      ...weights,
+    },
+    stats: { totalAnswers: 0, knowCount: 0, heardCount: 0, dontKnowCount: 0, scoreSum: 0 },
+    answers: [],
+  };
+}
+
+const profileNeutral  = makeProfile({});
+const profileSports   = makeProfile({ domain: { sports: 5.0 }, subdomain: { football: 5.0 }, occupation: { 'ASSOCIATION FOOTBALL PLAYER': 5.0 } });
+const profileKazakhstan = makeProfile({ macroRegion: { kz_ca: 5.0 }, country: { KAZ: 5.0 } });
+const profileActor    = makeProfile({ domain: { entertainment: 5.0 }, occupation: { 'ACTOR': 5.0, 'FILM ACTOR': 5.0 } });
+
+console.log('\n── Adaptive tail tests ──');
+
+// Run multiple trials and average for stability
+function avgTailStat(profile, region, statFn, trials = 5) {
+  let total = 0;
+  for (let i = 0; i < trials; i++) {
+    const { deck } = createDeck(region);
+    const calib = deck.slice(0, CALIB_SIZE);
+    const usedIds = new Set(calib.map(p => p.wikidata_id));
+    const counts  = getInitialSessionCounts(calib);
+    const tail    = createAdaptiveTail(pools, region, usedIds, profile, counts);
+    total += statFn(tail);
+  }
+  return total / trials;
+}
+
+// A: Sports-heavy
+{
+  const sportsFn = tail => tail.filter(p => p.domain === 'sports').length;
+  const biased  = avgTailStat(profileSports,  undefined, sportsFn);
+  const neutral = avgTailStat(profileNeutral, undefined, sportsFn);
+  check(
+    `A: sports-heavy profile → more sports in tail (biased=${biased.toFixed(1)} neutral=${neutral.toFixed(1)})`,
+    biased > neutral,
+    `biased=${biased.toFixed(1)} neutral=${neutral.toFixed(1)}`,
+  );
+}
+
+// B: Kazakhstan-heavy
+{
+  const kzFn = tail => tail.filter(p => p.macro_region === 'kz_ca').length;
+  const biased  = avgTailStat(profileKazakhstan, undefined, kzFn);
+  const neutral = avgTailStat(profileNeutral,    undefined, kzFn);
+  check(
+    `B: kz-heavy profile → more kz_ca in tail (biased=${biased.toFixed(1)} neutral=${neutral.toFixed(1)})`,
+    biased > neutral,
+    `biased=${biased.toFixed(1)} neutral=${neutral.toFixed(1)}`,
+  );
+}
+
+// C: Actor-heavy
+{
+  const actorFn = tail => tail.filter(p => p.domain === 'entertainment').length;
+  const biased  = avgTailStat(profileActor,   undefined, actorFn);
+  const neutral = avgTailStat(profileNeutral, undefined, actorFn);
+  check(
+    `C: actor-heavy profile → more entertainment in tail (biased=${biased.toFixed(1)} neutral=${neutral.toFixed(1)})`,
+    biased > neutral,
+    `biased=${biased.toFixed(1)} neutral=${neutral.toFixed(1)}`,
+  );
+}
+
+// Caps: domain ≤ 30, subdomain ≤ 20, country ≤ 20, soft-sensitive ≤ 2, hard-sensitive = 0
+{
+  let domainViolation = false, subViolation = false, countryViolation = false;
+  let softViolation = false, hardViolation = false;
+  let tailLengthWrong = false;
+
+  for (let i = 0; i < 20; i++) {
+    const { deck } = createDeck(undefined);
+    const calib   = deck.slice(0, CALIB_SIZE);
+    const usedIds = new Set(calib.map(p => p.wikidata_id));
+    const counts  = getInitialSessionCounts(calib);
+    const tail    = createAdaptiveTail(pools, undefined, usedIds, profileNeutral, counts);
+    const full    = [...calib, ...tail];
+
+    if (tail.length !== ADAPTIVE_TAIL_SIZE) tailLengthWrong = true;
+    if (maxCount(full, 'domain')       > ADAPTIVE_DOMAIN_MAX)    domainViolation  = true;
+    if (maxNamedSubdomainCount(full)    > ADAPTIVE_SUBDOMAIN_MAX) subViolation     = true;
+    if (maxCount(full, 'country_tag')  > ADAPTIVE_COUNTRY_MAX)   countryViolation = true;
+    const softCount = full.filter(p =>
+      p.content_sensitivity === 'crime_sensitive' || p.content_sensitivity === 'scandal_sensitive',
+    ).length;
+    if (softCount > ADAPTIVE_SOFT_MAX) softViolation = true;
+    if (full.some(p => isSensitive(p))) hardViolation = true;
+  }
+
+  check('adaptive tail length = 70',                      !tailLengthWrong);
+  check(`full-deck domain max ≤ ${ADAPTIVE_DOMAIN_MAX}`,  !domainViolation);
+  check(`full-deck subdomain max ≤ ${ADAPTIVE_SUBDOMAIN_MAX}`, !subViolation);
+  check(`full-deck country max ≤ ${ADAPTIVE_COUNTRY_MAX}`, !countryViolation);
+  check(`full-deck soft-sensitive ≤ ${ADAPTIVE_SOFT_MAX}`, !softViolation);
+  check('full-deck no hard-sensitive',                     !hardViolation);
+}
 
 // ── Pool stats ────────────────────────────────────────────────────────────────
 console.log('\n── Pool sizes ──');
