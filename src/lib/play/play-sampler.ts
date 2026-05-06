@@ -4,6 +4,7 @@ import { SENSITIVE_OCCUPATIONS } from './localized-labels';
 // Local extension — kz_ca_top lives in JSON but not in shared types.ts
 interface PlayPoolsExtended extends PlayPools {
   kz_ca_top?: Person[];
+  // top_30000 is the base pool; inherited from PlayPools
 }
 
 // ── Fisher-Yates shuffle ──────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ function isSensitivePerson(person: Person): boolean {
 
 export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: 'kz'): Person[] {
   const safe: PlayPoolsExtended = {
-    top_5000:  pools.top_5000.filter(p => !isSensitivePerson(p)),
+    top_30000: pools.top_30000.filter(p => !isSensitivePerson(p)),
     ru_quota:  pools.ru_quota.filter(p => !isSensitivePerson(p)),
     kz_quota:  pools.kz_quota.filter(p => !isSensitivePerson(p)),
     hpi_quota: pools.hpi_quota.filter(p => !isSensitivePerson(p)),
@@ -74,14 +75,14 @@ export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: 'kz'):
   const deck: Person[] = [];
 
   if (region === 'kz') {
-    // 23 из top_5000 по KZ-бакетам: 6/6/6/5
+    // 23 из top_30000 по KZ-бакетам: 6/6/6/5
     for (const bucket of KZ_BUCKETS) {
-      const pool = safe.top_5000.filter(
+      const pool = safe.top_30000.filter(
         (p) => p.global_rank >= bucket.min && p.global_rank <= bucket.max,
       );
       let picked = sampleUnique(pool, bucket.need, usedIds);
       if (picked.length < bucket.need) {
-        const fallback = sampleUnique(safe.top_5000, bucket.need - picked.length, usedIds);
+        const fallback = sampleUnique(safe.top_30000, bucket.need - picked.length, usedIds);
         picked = [...picked, ...fallback];
       }
       deck.push(...picked);
@@ -91,7 +92,7 @@ export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: 'kz'):
     {
       let picked = sampleUnique(safe.ru_quota, 9, usedIds);
       if (picked.length < 9) {
-        const fallback = sampleUnique(safe.top_5000, 9 - picked.length, usedIds);
+        const fallback = sampleUnique(safe.top_30000, 9 - picked.length, usedIds);
         picked = [...picked, ...fallback];
       }
       deck.push(...picked);
@@ -118,20 +119,20 @@ export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: 'kz'):
     {
       let picked = sampleUnique(safe.hpi_quota, 3, usedIds);
       if (picked.length < 3) {
-        const fallback = sampleUnique(safe.top_5000, 3 - picked.length, usedIds);
+        const fallback = sampleUnique(safe.top_30000, 3 - picked.length, usedIds);
         picked = [...picked, ...fallback];
       }
       deck.push(...picked);
     }
   } else {
-    // Default: 40 из top_5000 по бакетам 10/10/10/10
+    // Default: 40 из top_30000 по бакетам 10/10/10/10
     for (const bucket of TOP_BUCKETS) {
-      const pool = safe.top_5000.filter(
+      const pool = safe.top_30000.filter(
         (p) => p.global_rank >= bucket.min && p.global_rank <= bucket.max,
       );
       let picked = sampleUnique(pool, bucket.need, usedIds);
       if (picked.length < bucket.need) {
-        const fallback = sampleUnique(safe.top_5000, bucket.need - picked.length, usedIds);
+        const fallback = sampleUnique(safe.top_30000, bucket.need - picked.length, usedIds);
         picked = [...picked, ...fallback];
       }
       deck.push(...picked);
@@ -141,7 +142,7 @@ export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: 'kz'):
     {
       let picked = sampleUnique(safe.ru_quota, 4, usedIds);
       if (picked.length < 4) {
-        const fallback = sampleUnique(safe.top_5000, 4 - picked.length, usedIds);
+        const fallback = sampleUnique(safe.top_30000, 4 - picked.length, usedIds);
         picked = [...picked, ...fallback];
       }
       deck.push(...picked);
@@ -151,7 +152,7 @@ export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: 'kz'):
     {
       let picked = sampleUnique(safe.kz_quota, 4, usedIds);
       if (picked.length < 4) {
-        const fallback = sampleUnique(safe.top_5000, 4 - picked.length, usedIds);
+        const fallback = sampleUnique(safe.top_30000, 4 - picked.length, usedIds);
         picked = [...picked, ...fallback];
       }
       deck.push(...picked);
@@ -161,7 +162,7 @@ export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: 'kz'):
     {
       let picked = sampleUnique(safe.hpi_quota, 2, usedIds);
       if (picked.length < 2) {
-        const fallback = sampleUnique(safe.top_5000, 2 - picked.length, usedIds);
+        const fallback = sampleUnique(safe.top_30000, 2 - picked.length, usedIds);
         picked = [...picked, ...fallback];
       }
       deck.push(...picked);

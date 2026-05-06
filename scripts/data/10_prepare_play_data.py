@@ -2,7 +2,7 @@
 Шаг 10: Подготовка данных для play-страницы.
 
 Читает figures_top_final.csv, собирает 5 пулов:
-  top_5000   — top 5000 по global_rank
+  top_30000  — все 30 000 фигур, sorted by global_rank
   ru_quota   — top 500 по ru_rank, исключая уже вошедших в top_5000
   kz_quota   — top 500 по kz_rank, исключая уже вошедших в top_5000
   hpi_quota  — top 500 по hpi_rank, исключая уже вошедших в top_5000
@@ -34,22 +34,23 @@ OUT_DIR      = ROOT / "public" / "data"
 OUT_PATH     = OUT_DIR / "play_pools.json"
 
 KEEP_COLS = [
-    "wikidata_id", "name", "occupation", "bplace_country",
+    "wikidata_id", "name", "occupation", "gender", "bplace_country",
     "birthyear", "deathyear", "inclusion_source", "global_rank",
     "global_score", "ru_score", "kz_score", "hpi",
 ]
 
 FLOAT_ROUND = {"global_score": 4, "ru_score": 4, "kz_score": 4, "hpi": 1}
-INT_COLS = {"birthyear", "deathyear", "global_rank"}
+INT_COLS    = {"birthyear", "deathyear", "global_rank"}
+GENDER_MAP  = {"M": "Male", "F": "Female"}
 
 QUOTA_SIZE = 500
 
 CONTROL_FIGURES = [
-    ("Abai Qunanbaiuly",      "Q195591"),
-    ("Nursultan Nazarbayev",  "Q19766"),
+    ("Abai Qunanbaiuly",      "Q304890"),
+    ("Nursultan Nazarbayev",  "Q57394"),
     ("Ybyrai Altynsarin",     "Q1352359"),
     ("Mukhtar Auezov",        "Q1435009"),
-    ("Kassym-Jomart Tokayev", "Q61513"),
+    ("Kassym-Jomart Tokayev", "Q200881"),
     ("Dimash Qudaibergen",    "Q24049490"),
     ("Gennady Golovkin",      "Q311562"),
     ("Alexander Pushkin",     "Q7200"),
@@ -58,17 +59,21 @@ CONTROL_FIGURES = [
     ("Jesus",                 "Q302"),
     ("Muhammad",              "Q9458"),
     ("Albert Einstein",       "Q937"),
+    ("Max Verstappen",        "Q2239218"),
+    ("JD Vance",              "Q28935729"),
 ]
 
 
 def to_records(df: pd.DataFrame, display_map: dict) -> list:
-    """Конвертирует DataFrame в список dict, убирая NaN/NaT, добавляя display_name_*."""
+    """Конвертирует DataFrame в список dict, убирая NaN/NaT, добавляя display_name_* и gender."""
     records = []
     for row in df[KEEP_COLS].itertuples(index=False):
         rec = {}
         for col, val in zip(KEEP_COLS, row):
             if isinstance(val, float) and math.isnan(val):
                 rec[col] = None
+            elif col == "gender":
+                rec[col] = GENDER_MAP.get(val) if isinstance(val, str) else None
             elif col in INT_COLS:
                 rec[col] = int(val)
             elif col in FLOAT_ROUND:
@@ -110,7 +115,6 @@ for entry in manual_list:
         "display_name_ru": entry.get("display_name_ru") or None,
         "display_name_kk": entry.get("display_name_kk") or None,
     }
-# Применяем: manual_map перезаписывает display_map
 display_map.update(manual_map)
 print(f"Manual overrides: {len(manual_map)} записей применено")
 
@@ -121,10 +125,12 @@ print(f"Всего фигур: {len(df_full):,}")
 
 # ── Пулы ──────────────────────────────────────────────────────────────────────
 
-top_5000 = df_full[df_full["global_rank"] <= 5000].copy()
-top_5000["inclusion_source"] = "global"
-top_5000_ids = set(top_5000["wikidata_id"])
+# top_30000: все фигуры, sorted by global_rank
+top_30000 = df_full.sort_values("global_rank").copy()
+top_30000["inclusion_source"] = "global"
 
+# Quotas по-прежнему исключают top-5000 (как раньше)
+top_5000_ids = set(df_full[df_full["global_rank"] <= 5000]["wikidata_id"])
 not_in_top = df_full[~df_full["wikidata_id"].isin(top_5000_ids)].copy()
 
 ru_quota = (
@@ -152,20 +158,18 @@ hpi_quota = (
 hpi_quota["inclusion_source"] = "hpi_quota"
 
 print(f"\n── Размеры пулов ──")
-print(f"  top_5000  : {len(top_5000):>5,}")
-print(f"  ru_quota  : {len(ru_quota):>5,}")
-print(f"  kz_quota  : {len(kz_quota):>5,}")
-print(f"  hpi_quota : {len(hpi_quota):>5,}")
+print(f"  top_30000 : {len(top_30000):>6,}")
+print(f"  ru_quota  : {len(ru_quota):>6,}")
+print(f"  kz_quota  : {len(kz_quota):>6,}")
+print(f"  hpi_quota : {len(hpi_quota):>6,}")
 
-total_records = len(top_5000) + len(ru_quota) + len(kz_quota) + len(hpi_quota)
 all_ids = (
-    set(top_5000["wikidata_id"])
+    set(top_30000["wikidata_id"])
     | set(ru_quota["wikidata_id"])
     | set(kz_quota["wikidata_id"])
     | set(hpi_quota["wikidata_id"])
 )
-print(f"\n  Всего записей (сумма)  : {total_records:,}")
-print(f"  Уникальных wikidata_id : {len(all_ids):,}")
+print(f"\n  Уникальных wikidata_id : {len(all_ids):,}")
 
 # ── kz_ca_top: curated KZ/CA seed list ────────────────────────────────────────
 
@@ -173,17 +177,16 @@ seed_df = pd.read_csv(SEED_PATH, usecols=["wikidata_id", "kz_rank"])
 seed_ids = seed_df["wikidata_id"].astype(str).str.strip().tolist()
 
 kz_ca_df = df_full[df_full["wikidata_id"].isin(seed_ids)].copy()
-# Sort by kz_rank ASC for readability; kz_rank is NOT written to JSON
 kz_ca_df = kz_ca_df.sort_values("kz_rank", na_position="last")
 
-print(f"  kz_ca_top : {len(kz_ca_df):>5,}  (seed={len(seed_ids)}, matched={len(kz_ca_df)})")
+print(f"  kz_ca_top : {len(kz_ca_df):>6,}  (seed={len(seed_ids)}, matched={len(kz_ca_df)})")
 
 # ── Сборка и запись ───────────────────────────────────────────────────────────
 
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 payload = {
-    "top_5000":  to_records(top_5000.sort_values("global_rank"), display_map),
+    "top_30000": to_records(top_30000, display_map),
     "ru_quota":  to_records(ru_quota,  display_map),
     "kz_quota":  to_records(kz_quota,  display_map),
     "hpi_quota": to_records(hpi_quota, display_map),
@@ -204,9 +207,9 @@ print(f"  Gzip    : {gz_bytes/1024:.1f} KB ({gz_bytes/1024/1024:.2f} MB)")
 
 print(f"\n── Контрольные фигуры ──")
 pool_map = {
-    "top_5000": set(top_5000["wikidata_id"]),
-    "ru_quota": set(ru_quota["wikidata_id"]),
-    "kz_quota": set(kz_quota["wikidata_id"]),
+    "top_30000": set(top_30000["wikidata_id"]),
+    "ru_quota":  set(ru_quota["wikidata_id"]),
+    "kz_quota":  set(kz_quota["wikidata_id"]),
     "hpi_quota": set(hpi_quota["wikidata_id"]),
 }
 rank_df = df_full.set_index("wikidata_id")[["global_rank", "ru_rank", "kz_rank", "hpi_rank"]]

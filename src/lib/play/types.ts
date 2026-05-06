@@ -25,12 +25,13 @@ export interface Person {
   display_name_en?: string | null;
   display_name_ru?: string | null;
   display_name_kk?: string | null;
+  gender?: string | null;
 }
 
 // ── Структура play_pools.json ─────────────────────────────────────────────────
 
 export interface PlayPools {
-  top_5000: Person[];
+  top_30000: Person[];
   ru_quota: Person[];
   kz_quota: Person[];
   hpi_quota: Person[];
