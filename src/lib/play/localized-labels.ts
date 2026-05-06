@@ -1,13 +1,13 @@
-type LocalizedLabel = { en: string; ru: string; kk: string };
+type LocalizedLabel = { en: string; ru: string; kk: string; ru_female?: string };
 
 // ── Occupations ───────────────────────────────────────────────────────────────
 
 export const OCCUPATION_LABELS: Record<string, LocalizedLabel> = {
-  "ACTOR":                    { en: "Actor",                     ru: "Актёр",                          kk: "Актер" },
+  "ACTOR":                    { en: "Actor",                     ru: "Актёр",                          kk: "Актер",          ru_female: "Актриса" },
   "POLITICIAN":               { en: "Politician",                ru: "Политик",                        kk: "Саясаткер" },
-  "SINGER":                   { en: "Singer",                    ru: "Певец",                          kk: "Әнші" },
-  "SOCCER PLAYER":            { en: "Soccer Player",             ru: "Футболист",                      kk: "Футболшы" },
-  "WRITER":                   { en: "Writer",                    ru: "Писатель",                       kk: "Жазушы" },
+  "SINGER":                   { en: "Singer",                    ru: "Певец",                          kk: "Әнші",           ru_female: "Певица" },
+  "SOCCER PLAYER":            { en: "Soccer Player",             ru: "Футболист",                      kk: "Футболшы",       ru_female: "Футболистка" },
+  "WRITER":                   { en: "Writer",                    ru: "Писатель",                       kk: "Жазушы",         ru_female: "Писательница" },
   "MUSICIAN":                 { en: "Musician",                  ru: "Музыкант",                       kk: "Музыкант" },
   "RELIGIOUS FIGURE":         { en: "Religious Figure",          ru: "Религиозный деятель",            kk: "Діни тұлға" }, // REVIEW kk
   "FILM DIRECTOR":            { en: "Film Director",             ru: "Кинорежиссёр",                   kk: "Режиссер" },
@@ -20,17 +20,17 @@ export const OCCUPATION_LABELS: Record<string, LocalizedLabel> = {
   "COMPOSER":                 { en: "Composer",                  ru: "Композитор",                     kk: "Композитор" },
   "SOCIAL ACTIVIST":          { en: "Social Activist",           ru: "Общественный активист",          kk: "Қоғам қайраткері" },
   "COMPANION":                { en: "Companion",                 ru: "Сподвижник",                     kk: "Сахаба" }, // REVIEW — чаще сподвижник пророка; может быть другой контекст
-  "TENNIS PLAYER":            { en: "Tennis Player",             ru: "Теннисист",                      kk: "Теннисші" },
+  "TENNIS PLAYER":            { en: "Tennis Player",             ru: "Теннисист",                      kk: "Теннисші",       ru_female: "Теннисистка" },
   "PHYSICIST":                { en: "Physicist",                 ru: "Физик",                          kk: "Физик" },
   "BASKETBALL PLAYER":        { en: "Basketball Player",         ru: "Баскетболист",                   kk: "Баскетболшы" },
-  "COMEDIAN":                 { en: "Comedian",                  ru: "Комик",                          kk: "Комик" },
+  "COMEDIAN":                 { en: "Comedian",                  ru: "Комик",                          kk: "Комик",          ru_female: "Комедиантка" },
   "RACING DRIVER":            { en: "Racing Driver",             ru: "Автогонщик",                     kk: "Жарыс жүргізушісі" }, // REVIEW kk
   "MODEL":                    { en: "Model",                     ru: "Модель",                         kk: "Модель" },
   "WRESTLER":                 { en: "Wrestler",                  ru: "Борец",                          kk: "Балуан" }, // REVIEW — может быть рестлер (WWE) или борец (спорт)
   "BOXER":                    { en: "Boxer",                     ru: "Боксёр",                         kk: "Боксшы" },
   "MATHEMATICIAN":            { en: "Mathematician",             ru: "Математик",                      kk: "Математик" },
   "CELEBRITY":                { en: "Celebrity",                 ru: "Знаменитость",                   kk: "Атақты тұлға" }, // REVIEW kk
-  "PRESENTER":                { en: "Presenter",                 ru: "Ведущий",                        kk: "Жүргізуші" },
+  "PRESENTER":                { en: "Presenter",                 ru: "Ведущий",                        kk: "Жүргізуші",      ru_female: "Ведущая" },
   "MAFIOSO":                  { en: "Mafioso",                   ru: "Мафиози",                        kk: "Мафиози" }, // REVIEW kk
   "BASEBALL PLAYER":          { en: "Baseball Player",           ru: "Бейсболист",                     kk: "Бейсболшы" },
   "EXPLORER":                 { en: "Explorer",                  ru: "Исследователь",                  kk: "Зерттеуші" },
@@ -38,19 +38,19 @@ export const OCCUPATION_LABELS: Record<string, LocalizedLabel> = {
   "MARTIAL ARTS":             { en: "Martial Artist",            ru: "Мастер боевых искусств",         kk: "Жекпе-жек шебері" }, // REVIEW — MARTIAL ARTS как occupation-лейбл, не жанр
   "AMERICAN FOOTBALL PLAYER": { en: "American Football Player",  ru: "Игрок в американский футбол",   kk: "Американдық футболшы" },
   "BIOLOGIST":                { en: "Biologist",                 ru: "Биолог",                         kk: "Биолог" },
-  "SKATER":                   { en: "Skater",                    ru: "Фигурист",                       kk: "Фигурашы" }, // REVIEW — figure/speed/skateboard?
+  "SKATER":                   { en: "Skater",                    ru: "Фигурист",                       kk: "Фигурашы",       ru_female: "Фигуристка" }, // REVIEW — figure/speed/skateboard?
   "PORNOGRAPHIC ACTOR":       { en: "Adult Film Actor",          ru: "Актёр для взрослых",             kk: "Ересектерге арналған актер" },
   "INVENTOR":                 { en: "Inventor",                  ru: "Изобретатель",                   kk: "Өнертапқыш" },
   "PHYSICIAN":                { en: "Physician",                 ru: "Врач",                           kk: "Дәрігер" },
   "CRICKETER":                { en: "Cricketer",                 ru: "Крикетист",                      kk: "Крикетші" },
-  "ATHLETE":                  { en: "Athlete",                   ru: "Спортсмен",                      kk: "Спортшы" },
+  "ATHLETE":                  { en: "Athlete",                   ru: "Спортсмен",                      kk: "Спортшы",        ru_female: "Спортсменка" },
   "HOCKEY PLAYER":            { en: "Hockey Player",             ru: "Хоккеист",                       kk: "Хоккейші" },
   "ARCHITECT":                { en: "Architect",                 ru: "Архитектор",                     kk: "Сәулетші" },
   "CHEMIST":                  { en: "Chemist",                   ru: "Химик",                          kk: "Химик" },
   "ASTRONAUT":                { en: "Astronaut",                 ru: "Космонавт",                      kk: "Ғарышкер" },
   "HISTORIAN":                { en: "Historian",                 ru: "Историк",                        kk: "Тарихшы" },
-  "JOURNALIST":               { en: "Journalist",                ru: "Журналист",                      kk: "Журналист" },
-  "DANCER":                   { en: "Dancer",                    ru: "Танцор",                         kk: "Биші" },
+  "JOURNALIST":               { en: "Journalist",                ru: "Журналист",                      kk: "Журналист",      ru_female: "Журналистка" },
+  "DANCER":                   { en: "Dancer",                    ru: "Танцор",                         kk: "Биші",           ru_female: "Танцовщица" },
   "PSYCHOLOGIST":             { en: "Psychologist",              ru: "Психолог",                       kk: "Психолог" },
   "ASTRONOMER":               { en: "Astronomer",                ru: "Астроном",                       kk: "Астроном" },
   "ECONOMIST":                { en: "Economist",                 ru: "Экономист",                      kk: "Экономист" },
@@ -71,7 +71,7 @@ export const OCCUPATION_LABELS: Record<string, LocalizedLabel> = {
   "PUBLIC WORKER":            { en: "Public Servant",            ru: "Государственный деятель",        kk: "Мемлекет қайраткері" }, // REVIEW — civil servant / public servant / общественный работник?
   "PILOT":                    { en: "Pilot",                     ru: "Пилот",                          kk: "Ұшқыш" },
   "CYCLIST":                  { en: "Cyclist",                   ru: "Велосипедист",                   kk: "Велосипедші" },
-  "GYMNAST":                  { en: "Gymnast",                   ru: "Гимнаст",                        kk: "Гимнаст" },
+  "GYMNAST":                  { en: "Gymnast",                   ru: "Гимнаст",                        kk: "Гимнаст",        ru_female: "Гимнастка" },
   "PIRATE":                   { en: "Pirate",                    ru: "Пират",                          kk: "Қарақшы" },
   "DIPLOMAT":                 { en: "Diplomat",                  ru: "Дипломат",                       kk: "Дипломат" },
   "SKIER":                    { en: "Skier",                     ru: "Лыжник",                         kk: "Лыжашы" },
@@ -87,7 +87,7 @@ export const OCCUPATION_LABELS: Record<string, LocalizedLabel> = {
   "POLITICAL SCIENTIST":      { en: "Political Scientist",       ru: "Политолог",                      kk: "Саясаттанушы" },
   "SCULPTOR":                 { en: "Sculptor",                  ru: "Скульптор",                      kk: "Мүсінші" },
   "PHOTOGRAPHER":             { en: "Photographer",              ru: "Фотограф",                       kk: "Фотограф" },
-  "SWIMMER":                  { en: "Swimmer",                   ru: "Пловец",                         kk: "Жүзуші" },
+  "SWIMMER":                  { en: "Swimmer",                   ru: "Пловец",                         kk: "Жүзуші",         ru_female: "Пловчиха" },
   "SNOOKER":                  { en: "Snooker Player",            ru: "Игрок в снукер",                 kk: "Снукерші" }, // REVIEW — лейбл "SNOOKER" без "PLAYER"
   "CRITIC":                   { en: "Critic",                    ru: "Критик",                         kk: "Сыншы" },
   "VOLLEYBALL PLAYER":        { en: "Volleyball Player",         ru: "Волейболист",                    kk: "Волейболшы" },
@@ -253,11 +253,15 @@ export const SENSITIVE_OCCUPATIONS: ReadonlySet<string> = new Set([
 export function getOccupationLabel(
   value: string | null | undefined,
   locale: string,
+  gender?: string | null,
 ): string {
   if (!value) return "";
   const label = OCCUPATION_LABELS[value];
   if (!label) return value;
-  if (locale === "ru") return label.ru || label.en || value;
+  if (locale === "ru") {
+    if (gender === "Female" && label.ru_female) return label.ru_female;
+    return label.ru || label.en || value;
+  }
   if (locale === "kk") return label.kk || label.ru || label.en || value;
   return label.en || value;
 }

@@ -41,7 +41,7 @@ function pickDisplayName(person: Person, locale: string): string {
 export default function PlayCard({ person, locale, labels, onAnswer, progress }: PlayCardProps) {
   const years       = formatYearRange(person.birthyear, person.deathyear, locale);
   const displayName = pickDisplayName(person, locale);
-  const occupation  = getOccupationLabel(person.occupation, locale);
+  const occupation  = getOccupationLabel(person.occupation, locale, person.gender);
   const country     = getCountryLabel(person.bplace_country, locale);
 
   return (
