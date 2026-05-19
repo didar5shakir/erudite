@@ -26,6 +26,9 @@ const CALIB_ERA_MAX       = 8;
 const CALIB_REGION_MAX    = 8;
 const CALIB_KZ_CA_TARGET  = 6;
 const CALIB_KZ_CA_MAX     = 8;
+const CALIB_EASY_RANK_MAX   = 1500;
+const CALIB_MEDIUM_RANK_MAX = 6000;
+const CALIB_HARD_RANK_MAX   = 13000;
 const KZ_CA_REMAINING     = 24;
 
 const ADAPTIVE_TAIL_SIZE      = 70;
@@ -144,15 +147,20 @@ function createCalibrationBlock(safe, kzCaIds, region, usedIds) {
     }
   }
 
-  // Phase 2: fill by difficulty targets, prefer non-unknown era
-  for (const [diff, target] of [['easy', CALIB_EASY], ['medium', CALIB_MEDIUM], ['hard', CALIB_HARD]]) {
+  // Phase 2: fill by difficulty targets, prefer non-unknown era; cap rank per tier
+  for (const [diff, target, maxRank] of [
+    ['easy',   CALIB_EASY,   CALIB_EASY_RANK_MAX],
+    ['medium', CALIB_MEDIUM, CALIB_MEDIUM_RANK_MAX],
+    ['hard',   CALIB_HARD,   CALIB_HARD_RANK_MAX],
+  ]) {
     for (const p of shuffled) {
       if ((diffCount[diff] ?? 0) >= target) break;
-      if (p.difficulty_bucket === diff && (p.era_bucket ?? 'unknown') !== 'unknown' && !isConstrained(p)) addCard(p);
+      if (p.difficulty_bucket === diff && p.global_rank <= maxRank &&
+          (p.era_bucket ?? 'unknown') !== 'unknown' && !isConstrained(p)) addCard(p);
     }
     for (const p of shuffled) {
       if ((diffCount[diff] ?? 0) >= target) break;
-      if (p.difficulty_bucket === diff && !isConstrained(p)) addCard(p);
+      if (p.difficulty_bucket === diff && p.global_rank <= maxRank && !isConstrained(p)) addCard(p);
     }
   }
 
@@ -389,8 +397,10 @@ const KZ_CA_QIDs = new Set((pools.kz_ca_top ?? []).map(p => p.wikidata_id));
 
 // ── Run 100 iterations, collect stats ─────────────────────────────────────────
 
+const SUITE_RUNS = 300;
+
 function runSuite(label, region) {
-  console.log(`\n── ${label} (100 runs) ──`);
+  console.log(`\n── ${label} (${SUITE_RUNS} runs) ──`);
 
   let allLength100        = true;
   let anyDuplicates       = false;
@@ -401,13 +411,15 @@ function runSuite(label, region) {
   let subdomainViolation  = false;
   let eraViolation        = false;
   let regionViolation     = false;
+  let rankViolation       = false;
+  let rankViolationDetail = '';
   let minKzCa30 = Infinity, maxKzCa30 = 0;
   let minKzCaTotal = Infinity;
   let diffStats = { easy: 0, medium: 0, hard: 0 };
   let sampleFirst30 = null;
   const totalRelax = { relaxedEra: 0, relaxedSub: 0, relaxedDomain: 0, relaxedDifficulty: 0 };
 
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < SUITE_RUNS; i++) {
     const { deck, relaxLog } = createDeck(region);
     const first = deck.slice(0, CALIB_SIZE);
     totalRelax.relaxedEra        += relaxLog.relaxedEra;
@@ -425,6 +437,14 @@ function runSuite(label, region) {
     if (maxNamedSubdomainCount(first)    > CALIB_SUBDOMAIN_MAX) subdomainViolation  = true;
     if (maxCount(first, 'era_bucket')   > CALIB_ERA_MAX)       eraViolation        = true;
     if (region !== 'kz' && maxCount(first, 'macro_region') > CALIB_REGION_MAX) regionViolation = true;
+    for (const p of first) {
+      // kz_ca_top figures are handpicked for kz relevance regardless of global rank — exempt
+      if (KZ_CA_QIDs.has(p.wikidata_id)) continue;
+      const bk = p.difficulty_bucket;
+      if (bk === 'easy'   && p.global_rank > CALIB_EASY_RANK_MAX)   { rankViolation = true; rankViolationDetail = `easy rank ${p.global_rank} (${p.name})`; }
+      if (bk === 'medium' && p.global_rank > CALIB_MEDIUM_RANK_MAX) { rankViolation = true; rankViolationDetail = `medium rank ${p.global_rank} (${p.name})`; }
+      if (bk === 'hard'   && p.global_rank > CALIB_HARD_RANK_MAX)   { rankViolation = true; rankViolationDetail = `hard rank ${p.global_rank} (${p.name})`; }
+    }
 
     const kzCa30 = first.filter(p => KZ_CA_QIDs.has(p.wikidata_id)).length;
     if (kzCa30 < minKzCa30) minKzCa30 = kzCa30;
@@ -435,7 +455,7 @@ function runSuite(label, region) {
 
     for (const p of first) {
       const d = p.difficulty_bucket ?? 'unknown';
-      if (d in diffStats) diffStats[d] += 1 / 100;
+      if (d in diffStats) diffStats[d] += 1 / SUITE_RUNS;
     }
 
     if (i === 0) sampleFirst30 = first;
@@ -450,6 +470,12 @@ function runSuite(label, region) {
   check(`first 30 domain max ≤ ${CALIB_DOMAIN_MAX}`,    !domainMaxViolation);
   check(`first 30 subdomain max ≤ ${CALIB_SUBDOMAIN_MAX}`, !subdomainViolation);
   check(`first 30 era max ≤ ${CALIB_ERA_MAX}`,          !eraViolation);
+
+  check(
+    `first 30 rank caps (easy≤${CALIB_EASY_RANK_MAX} med≤${CALIB_MEDIUM_RANK_MAX} hard≤${CALIB_HARD_RANK_MAX})`,
+    !rankViolation,
+    rankViolationDetail,
+  );
 
   if (region !== 'kz') {
     check(`first 30 macro_region max ≤ ${CALIB_REGION_MAX}`, !regionViolation);

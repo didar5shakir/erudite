@@ -80,6 +80,12 @@ const KZ_CA_REMAINING = 24;
 const CALIB_EASY          = 10;
 const CALIB_MEDIUM        = 12;
 const CALIB_HARD          = 8;
+
+// Rank caps for calibration sampling — narrower than full bucket ranges so that
+// deep-tail figures (rank >13 000) never appear in the first 30 cards.
+export const CALIB_EASY_RANK_MAX   = 1500;   // same as easy bucket ceiling
+export const CALIB_MEDIUM_RANK_MAX = 6000;   // top 56 % of medium bucket (1 501–10 000)
+export const CALIB_HARD_RANK_MAX   = 13000;  // top 15 % of hard bucket (10 001–30 000)
 const CALIB_DOMAIN_MAX    = 5;
 const CALIB_SUBDOMAIN_MAX = 3;
 const CALIB_ERA_MAX       = 8;
@@ -202,22 +208,23 @@ function createCalibrationBlock(
     }
   }
 
-  // Phase 2: fill difficulty targets; prefer non-unknown era
-  const diffTargets: Array<[string, number]> = [
-    ['easy',   CALIB_EASY],
-    ['medium', CALIB_MEDIUM],
-    ['hard',   CALIB_HARD],
+  // Phase 2: fill difficulty targets; prefer non-unknown era; cap rank per tier
+  const diffTargets: Array<[string, number, number]> = [
+    ['easy',   CALIB_EASY,   CALIB_EASY_RANK_MAX],
+    ['medium', CALIB_MEDIUM, CALIB_MEDIUM_RANK_MAX],
+    ['hard',   CALIB_HARD,   CALIB_HARD_RANK_MAX],
   ];
-  for (const [diff, target] of diffTargets) {
+  for (const [diff, target, maxRank] of diffTargets) {
     for (const p of shuffled) {
       if ((diffCount[diff] ?? 0) >= target) break;
       if (p.difficulty_bucket === diff &&
+          p.global_rank <= maxRank &&
           (p.era_bucket ?? 'unknown') !== 'unknown' &&
           !isConstrained(p)) addCard(p);
     }
     for (const p of shuffled) {
       if ((diffCount[diff] ?? 0) >= target) break;
-      if (p.difficulty_bucket === diff && !isConstrained(p)) addCard(p);
+      if (p.difficulty_bucket === diff && p.global_rank <= maxRank && !isConstrained(p)) addCard(p);
     }
   }
 
