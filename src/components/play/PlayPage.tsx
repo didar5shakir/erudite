@@ -16,9 +16,12 @@ import {
 } from '@/lib/play/adaptive-storage';
 import {
   CALIB_SIZE,
-  ADAPTIVE_TAIL_SIZE,
-  createAdaptiveTail,
+  SESSION_CARD_COUNT,
+  EXPLORATION_RATIO_EARLY,
+  EXPLORATION_RATIO_LATE,
   getInitialSessionCounts,
+  buildAdaptiveCandidates,
+  pickNextAdaptiveCard,
 } from '@/lib/play/play-sampler';
 import type { PlayPoolsExtended } from '@/lib/play/play-sampler';
 import { calculateResultEstimate } from '@/lib/play/result-estimate';
@@ -51,6 +54,35 @@ interface PlayPageProps {
   labels: Labels;
 }
 
+function appendAdaptiveCard(
+  deck:    Person[],
+  cardIds: string[],
+  pools:   PlayPoolsExtended,
+  region:  'kz' | 'global',
+  nextIndex: number,
+): { deck: Person[]; cardIds: string[] } {
+  const usedIds = new Set(cardIds);
+  const candidates = buildAdaptiveCandidates(pools, region, usedIds);
+  const counts = getInitialSessionCounts(deck);
+  const recentCards = deck.slice(-10);
+  const exploreRatio = nextIndex < 50 ? EXPLORATION_RATIO_EARLY : EXPLORATION_RATIO_LATE;
+  const mode: 'exploit' | 'explore' = Math.random() < exploreRatio ? 'explore' : 'exploit';
+  const nextCard = pickNextAdaptiveCard({
+    candidates,
+    profile: getOrCreateAdaptiveProfile(),
+    usedIds,
+    counts,
+    recentCards,
+    rng: Math.random,
+    mode,
+  });
+  if (!nextCard) return { deck, cardIds };
+  return {
+    deck:    [...deck, nextCard],
+    cardIds: [...cardIds, nextCard.wikidata_id],
+  };
+}
+
 export default function PlayPage({ initialDeck, locale, region, labels }: PlayPageProps) {
   const [session, setSession] = useState<PlaySession | null>(null);
   const [pools, setPools] = useState<PlayPoolsExtended | null>(null);
@@ -60,7 +92,7 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
     fetch('/data/play_pools.json')
       .then(r => r.json())
       .then((data: PlayPoolsExtended) => setPools(data))
-      .catch(() => { /* pools unavailable — adaptive tail skipped */ });
+      .catch(() => { /* pools unavailable — adaptive picks skipped */ });
   }, []);
 
   useEffect(() => {
@@ -77,6 +109,23 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locale, region]);
 
+  // When pools arrive and we're waiting for an adaptive card, generate it
+  useEffect(() => {
+    if (!pools || !session || session.completed) return;
+    if (session.currentIndex < session.deck.length) return; // card already exists
+    if (session.deck.length >= SESSION_CARD_COUNT) return;
+
+    const { deck: newDeck, cardIds: newCardIds } = appendAdaptiveCard(
+      session.deck, session.cardIds, pools, region, session.currentIndex,
+    );
+    if (newDeck.length === session.deck.length) return; // picker returned null
+
+    const updated = { ...session, deck: newDeck, cardIds: newCardIds };
+    saveSession(updated, region);
+    setSession(updated);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pools]);
+
   function handleAnswer(answer: AnswerType) {
     if (!session || session.completed) return;
 
@@ -89,41 +138,51 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
       responseMs: now - startedAt.current,
     };
 
-    const isLast = session.currentIndex + 1 >= session.deck.length;
-    let updated: PlaySession = {
-      ...session,
-      answers: { ...session.answers, [person.wikidata_id]: newAnswer },
-      currentIndex: isLast ? session.deck.length : session.currentIndex + 1,
-      completed: isLast,
-    };
+    const nextIndex = session.currentIndex + 1;
 
-    // Update adaptive profile (separate storage, persists across sessions)
     const profile = getOrCreateAdaptiveProfile();
     const updatedProfile = updateAdaptiveProfile(profile, person, answer, { timestamp: now });
     saveAdaptiveProfile(updatedProfile);
 
-    // After the 30th card (last calibration card), replace the tail with adaptive picks
+    let newDeck = session.deck;
+    let newCardIds = session.cardIds;
+
+    // Lazy append: one adaptive card per answer once in adaptive phase
     if (
-      session.currentIndex === CALIB_SIZE - 1 &&
-      !session.adaptiveTailGenerated &&
+      nextIndex >= CALIB_SIZE &&
+      newDeck.length < SESSION_CARD_COUNT &&
       pools !== null
     ) {
-      const calibCards = updated.deck.slice(0, CALIB_SIZE);
-      const calibUsedIds = new Set(calibCards.map(p => p.wikidata_id));
-      const sessionCounts = getInitialSessionCounts(calibCards);
-      const adaptiveTail = createAdaptiveTail(
-        pools, region, calibUsedIds, updatedProfile, sessionCounts,
-      );
-      if (adaptiveTail.length === ADAPTIVE_TAIL_SIZE) {
-        const newDeck = [...calibCards, ...adaptiveTail];
-        updated = {
-          ...updated,
-          deck:                  newDeck,
-          cardIds:               newDeck.map(p => p.wikidata_id),
-          adaptiveTailGenerated: true,
-        };
+      const usedIds = new Set(newCardIds);
+      const candidates = buildAdaptiveCandidates(pools, region, usedIds);
+      const counts = getInitialSessionCounts(newDeck);
+      const recentCards = newDeck.slice(-10);
+      const exploreRatio = nextIndex < 50 ? EXPLORATION_RATIO_EARLY : EXPLORATION_RATIO_LATE;
+      const mode: 'exploit' | 'explore' = Math.random() < exploreRatio ? 'explore' : 'exploit';
+      const nextCard = pickNextAdaptiveCard({
+        candidates,
+        profile: updatedProfile,
+        usedIds,
+        counts,
+        recentCards,
+        rng: Math.random,
+        mode,
+      });
+      if (nextCard) {
+        newDeck    = [...newDeck, nextCard];
+        newCardIds = [...newCardIds, nextCard.wikidata_id];
       }
     }
+
+    const isCompleted = nextIndex >= SESSION_CARD_COUNT;
+    const updated: PlaySession = {
+      ...session,
+      deck:         newDeck,
+      cardIds:      newCardIds,
+      answers:      { ...session.answers, [person.wikidata_id]: newAnswer },
+      currentIndex: isCompleted ? newDeck.length : nextIndex,
+      completed:    isCompleted,
+    };
 
     saveSession(updated, region);
     setSession(updated);
@@ -177,6 +236,16 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
   }
 
   const currentPerson = session.deck[session.currentIndex];
+
+  // Waiting for pools to load so adaptive card can be generated
+  if (!currentPerson) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950">
+        <p className="text-neutral-500">{labels.loading}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 py-8">
       <PlayCard
@@ -184,7 +253,7 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
         locale={locale}
         labels={{ know: labels.know, heard: labels.heard, dont_know: labels.dont_know }}
         onAnswer={handleAnswer}
-        progress={{ current: session.currentIndex + 1, total: session.deck.length }}
+        progress={{ current: session.currentIndex + 1, total: SESSION_CARD_COUNT }}
       />
     </div>
   );

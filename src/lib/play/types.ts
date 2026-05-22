@@ -112,12 +112,12 @@ export interface PlaySession {
   version: 1;
   locale: string;
   sessionId: string;
-  deck: Person[];                    // 100 фигур в перемешанном порядке
-  cardIds: string[];                 // wikidata_id тех же 100 фигур (для быстрого поиска)
+  deck: Person[];                    // 30–100 фигур; растёт в адаптивной фазе
+  cardIds: string[];                 // wikidata_id текущих фигур в deck
   createdAt: string;                 // ISO 8601
   updatedAt: string;                 // ISO 8601
   currentIndex: number;              // 0–99, индекс текущей карточки
   answers: Record<string, Answer>;   // ключ — wikidata_id
   completed: boolean;
-  adaptiveTailGenerated?: boolean;   // true после замены карточек 31–100 на адаптивные
+  adaptiveTailGenerated?: boolean;   // устарело, сохранено для совместимости
 }

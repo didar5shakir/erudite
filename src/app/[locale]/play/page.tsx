@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
-import { createMixedSessionDeck } from '@/lib/play/play-sampler';
+import { createInitialSessionDeck } from '@/lib/play/play-sampler';
 import type { PlayPools } from '@/lib/play/types';
 import PlayPage from '@/components/play/PlayPage';
 
@@ -36,7 +36,7 @@ export default async function Page({
   const samplerRegion = resolvedRegion === 'kz' ? 'kz' : undefined;
 
   const pools = loadPools();
-  const deck = createMixedSessionDeck(pools, samplerRegion);
+  const deck = createInitialSessionDeck(pools, samplerRegion);
 
   const t = await getTranslations('play');
 

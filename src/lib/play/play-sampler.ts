@@ -320,6 +320,52 @@ export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: 'kz'):
   return [...calib, ...shuffle(remaining)];
 }
 
+// ── Initial session deck (calibration only) ───────────────────────────────────
+
+export function createInitialSessionDeck(pools: PlayPoolsExtended, region?: 'kz'): Person[] {
+  const safe: PlayPoolsExtended = {
+    top_30000: pools.top_30000.filter(p => !isSensitivePerson(p)),
+    ru_quota:  pools.ru_quota.filter(p  => !isSensitivePerson(p)),
+    kz_quota:  pools.kz_quota.filter(p  => !isSensitivePerson(p)),
+    hpi_quota: pools.hpi_quota.filter(p => !isSensitivePerson(p)),
+    kz_ca_top: pools.kz_ca_top?.filter(p => !isSensitivePerson(p)),
+  };
+  const kzCaIds = new Set((safe.kz_ca_top ?? []).map(p => p.wikidata_id));
+  const usedIds = new Set<string>();
+  return createCalibrationBlock(safe, kzCaIds, region ?? 'global', usedIds);
+}
+
+// ── Adaptive candidate pool ───────────────────────────────────────────────────
+
+export function buildAdaptiveCandidates(
+  pools:   PlayPoolsExtended,
+  region:  'kz' | 'global' | undefined,
+  usedIds: ReadonlySet<string>,
+): Person[] {
+  const safe: PlayPoolsExtended = {
+    top_30000: pools.top_30000.filter(p => !isSensitivePerson(p)),
+    ru_quota:  pools.ru_quota.filter(p  => !isSensitivePerson(p)),
+    kz_quota:  pools.kz_quota.filter(p  => !isSensitivePerson(p)),
+    hpi_quota: pools.hpi_quota.filter(p => !isSensitivePerson(p)),
+    kz_ca_top: pools.kz_ca_top?.filter(p => !isSensitivePerson(p)),
+  };
+  const srcOrder: Person[][] = region === 'kz'
+    ? [safe.kz_ca_top ?? [], safe.top_30000, safe.ru_quota, safe.kz_quota, safe.hpi_quota]
+    : [safe.top_30000, safe.ru_quota, safe.kz_quota, safe.hpi_quota];
+
+  const seenQids = new Set<string>();
+  const candidates: Person[] = [];
+  for (const src of srcOrder) {
+    for (const p of src) {
+      if (!seenQids.has(p.wikidata_id) && !usedIds.has(p.wikidata_id)) {
+        seenQids.add(p.wikidata_id);
+        candidates.push(p);
+      }
+    }
+  }
+  return candidates;
+}
+
 // ── Adaptive tail helpers ─────────────────────────────────────────────────────
 
 export function getInitialSessionCounts(calib: Person[]): SessionCounts {
