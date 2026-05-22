@@ -444,3 +444,145 @@ export function createAdaptiveTail(
 
   return tail;
 }
+
+// ── Anti-streak constants ─────────────────────────────────────────────────────
+
+export const ANTISTREAK_COUNTRY_MAX   = 2;
+export const ANTISTREAK_SUBDOMAIN_MAX = 2;
+export const ANTISTREAK_DOMAIN_MAX    = 3;
+
+// ── pickNextAdaptiveCard — helpers ────────────────────────────────────────────
+
+function runLengthAtEnd(
+  cards:  readonly Person[],
+  getTag: (p: Person) => string | null | undefined,
+): { tag: string; length: number } | null {
+  if (cards.length === 0) return null;
+  const tag = getTag(cards[cards.length - 1]);
+  if (!tag || tag === 'unknown') return null;
+  let length = 0;
+  for (let i = cards.length - 1; i >= 0; i--) {
+    if (getTag(cards[i]) === tag) length++;
+    else break;
+  }
+  return { tag, length };
+}
+
+function isSoftSensitiveCard(p: Person): boolean {
+  return p.content_sensitivity === 'crime_sensitive' ||
+         p.content_sensitivity === 'scandal_sensitive';
+}
+
+function buildEligiblePool(
+  candidates:       Person[],
+  usedIds:          ReadonlySet<string>,
+  counts:           SessionCounts,
+  blockedCountry:   string | null,
+  blockedSubdomain: string | null,
+  blockedDomain:    string | null,
+  relaxStreak:      { country?: boolean; subdomain?: boolean; domain?: boolean },
+  relaxCaps:        { country?: boolean; subdomain?: boolean; domain?: boolean },
+): Person[] {
+  return candidates.filter(p => {
+    if (usedIds.has(p.wikidata_id))                                                   return false;
+    if (p.content_sensitivity === 'adult_excluded')                                   return false;
+    if (isSoftSensitiveCard(p) && counts.softSensitiveCount >= ADAPTIVE_SOFT_MAX)     return false;
+
+    const d   = p.domain       !== 'unknown' ? p.domain : 'unknown';
+    const sub = p.subdomain    ?? null;
+    const ct  = p.country_tag  ?? null;
+
+    if (!relaxCaps.domain    && (counts.domainCount[d]             ?? 0) >= ADAPTIVE_DOMAIN_MAX)    return false;
+    if (!relaxCaps.subdomain && sub && (counts.subdomainCount[sub] ?? 0) >= ADAPTIVE_SUBDOMAIN_MAX) return false;
+    if (!relaxCaps.country   && ct  && (counts.countryCount[ct]    ?? 0) >= ADAPTIVE_COUNTRY_MAX)   return false;
+
+    if (!relaxStreak.country   && blockedCountry   && ct  === blockedCountry)   return false;
+    if (!relaxStreak.subdomain && blockedSubdomain && sub === blockedSubdomain) return false;
+    if (!relaxStreak.domain    && blockedDomain    && d   === blockedDomain)    return false;
+
+    return true;
+  });
+}
+
+function weightedRandomPick(
+  scored: Array<{ person: Person; score: number }>,
+  rng:    () => number,
+): Person {
+  let total = 0;
+  for (const s of scored) total += Math.max(s.score, 0.001);
+  let r = rng() * total;
+  for (const s of scored) {
+    r -= Math.max(s.score, 0.001);
+    if (r <= 0) return s.person;
+  }
+  return scored[scored.length - 1].person;
+}
+
+// ── pickNextAdaptiveCard ──────────────────────────────────────────────────────
+
+export interface PickNextOptions {
+  candidates:  Person[];
+  profile:     AdaptiveProfile;
+  usedIds:     ReadonlySet<string>;
+  counts:      SessionCounts;
+  recentCards: Person[];
+  rng:         () => number;
+  mode:        'exploit' | 'explore';
+}
+
+export function pickNextAdaptiveCard({
+  candidates,
+  profile,
+  usedIds,
+  counts,
+  recentCards,
+  rng,
+  mode,
+}: PickNextOptions): Person | null {
+  const ctRun  = runLengthAtEnd(recentCards, p => p.country_tag ?? null);
+  const subRun = runLengthAtEnd(recentCards, p => p.subdomain   ?? null);
+  const domRun = runLengthAtEnd(recentCards, p => p.domain !== 'unknown' ? p.domain : null);
+
+  const blockedCountry   = ctRun  && ctRun.length  >= ANTISTREAK_COUNTRY_MAX   ? ctRun.tag  : null;
+  const blockedSubdomain = subRun && subRun.length >= ANTISTREAK_SUBDOMAIN_MAX ? subRun.tag : null;
+  const blockedDomain    = domRun && domRun.length >= ANTISTREAK_DOMAIN_MAX    ? domRun.tag : null;
+
+  // Relax order: streak country → streak subdomain → streak domain →
+  //              cap country → cap subdomain → cap domain
+  // Never relax: usedIds, adult_excluded, soft-sensitive max.
+  const relaxLevels: Array<{
+    relaxStreak: { country?: boolean; subdomain?: boolean; domain?: boolean };
+    relaxCaps:   { country?: boolean; subdomain?: boolean; domain?: boolean };
+  }> = [
+    { relaxStreak: {},                                                    relaxCaps: {} },
+    { relaxStreak: { country: true },                                     relaxCaps: {} },
+    { relaxStreak: { country: true, subdomain: true },                    relaxCaps: {} },
+    { relaxStreak: { country: true, subdomain: true, domain: true },      relaxCaps: {} },
+    { relaxStreak: { country: true, subdomain: true, domain: true },  relaxCaps: { country: true } },
+    { relaxStreak: { country: true, subdomain: true, domain: true },  relaxCaps: { country: true, subdomain: true } },
+    { relaxStreak: { country: true, subdomain: true, domain: true },  relaxCaps: { country: true, subdomain: true, domain: true } },
+  ];
+
+  for (const { relaxStreak, relaxCaps } of relaxLevels) {
+    const eligible = buildEligiblePool(
+      candidates, usedIds, counts,
+      blockedCountry, blockedSubdomain, blockedDomain,
+      relaxStreak, relaxCaps,
+    );
+    if (eligible.length === 0) continue;
+
+    if (mode === 'explore') {
+      return eligible[Math.floor(rng() * eligible.length)];
+    }
+
+    // Exploit: weighted random from top-K by fit score
+    const scored = eligible
+      .map(p => ({ person: p, score: getCardFitScore(p, profile) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, TOP_K);
+
+    return weightedRandomPick(scored, rng);
+  }
+
+  return null;
+}
