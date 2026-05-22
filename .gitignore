@@ -48,3 +48,5 @@ next-env.d.ts
 scripts/data/.venv/
 __pycache__/
 *.pyc
+
+diagnostics/
