@@ -16,21 +16,25 @@ const pools = JSON.parse(readFileSync(join(ROOT, 'public/data/play_pools.json'),
 
 const SESSION_CARD_COUNT      = 100;
 const CALIB_SIZE              = 30;
-const CALIB_EASY              = 10;
-const CALIB_MEDIUM            = 12;
-const CALIB_HARD              = 8;
+const CALIB_EASY              = 15;
+const CALIB_MEDIUM            = 10;
+const CALIB_HARD              = 5;
+const CALIB_KZ_EASY           = 8;
+const CALIB_KZ_MEDIUM         = 5;
+const CALIB_KZ_HARD           = 2;
 const CALIB_DOMAIN_MAX        = 5;
 const CALIB_SUBDOMAIN_MAX     = 3;
 const CALIB_ERA_MAX           = 8;
 const CALIB_REGION_MAX        = 8;
-const CALIB_KZ_CA_TARGET      = 6;
-const CALIB_KZ_CA_MAX         = 8;
+const CALIB_KZ_CA_TARGET      = 15;
+const CALIB_KZ_CA_MAX         = 15;
 const CALIB_EASY_RANK_MAX     = 1500;
 const CALIB_MEDIUM_RANK_MAX   = 6000;
 const CALIB_HARD_RANK_MAX     = 13000;
 const ADAPTIVE_DOMAIN_MAX     = 30;
 const ADAPTIVE_SUBDOMAIN_MAX  = 20;
 const ADAPTIVE_COUNTRY_MAX    = 20;
+const UNKNOWN_COUNTRY_MAX     = 8;
 const ADAPTIVE_SOFT_MAX       = 2;
 const TOP_K                   = 200;
 const ANTISTREAK_COUNTRY_MAX  = 2;
@@ -42,6 +46,11 @@ const SUITE_RUNS              = 100;
 
 const SENSITIVE_OCCUPATIONS = new Set(['PORNOGRAPHIC ACTOR']);
 function isSensitive(p) { return SENSITIVE_OCCUPATIONS.has(p.occupation ?? ''); }
+function effectiveCountryKey(p) {
+  const ct = p.country_tag;
+  if (!ct || ct === 'unknown') return '_unknown_country';
+  return ct;
+}
 
 // ── Core shuffle / sample ─────────────────────────────────────────────────────
 
@@ -112,18 +121,20 @@ function createCalibrationBlock(safe, kzCaIds, region, usedIds) {
       if (kzCaIds.has(p.wikidata_id) && !isConstrained(p)) addCard(p);
     }
   }
+  const phase1Snap = region === 'kz' ? { ...diffCount } : {};
+  const p2Count = diff => (diffCount[diff] ?? 0) - (phase1Snap[diff] ?? 0);
   for (const [diff, target, maxRank] of [
-    ['easy',   CALIB_EASY,   CALIB_EASY_RANK_MAX],
-    ['medium', CALIB_MEDIUM, CALIB_MEDIUM_RANK_MAX],
-    ['hard',   CALIB_HARD,   CALIB_HARD_RANK_MAX],
+    ['easy',   region === 'kz' ? CALIB_KZ_EASY   : CALIB_EASY,   CALIB_EASY_RANK_MAX],
+    ['medium', region === 'kz' ? CALIB_KZ_MEDIUM : CALIB_MEDIUM, CALIB_MEDIUM_RANK_MAX],
+    ['hard',   region === 'kz' ? CALIB_KZ_HARD   : CALIB_HARD,   CALIB_HARD_RANK_MAX],
   ]) {
     for (const p of shuffled) {
-      if ((diffCount[diff] ?? 0) >= target) break;
+      if (p2Count(diff) >= target) break;
       if (p.difficulty_bucket === diff && p.global_rank <= maxRank &&
           (p.era_bucket ?? 'unknown') !== 'unknown' && !isConstrained(p)) addCard(p);
     }
     for (const p of shuffled) {
-      if ((diffCount[diff] ?? 0) >= target) break;
+      if (p2Count(diff) >= target) break;
       if (p.difficulty_bucket === diff && p.global_rank <= maxRank && !isConstrained(p)) addCard(p);
     }
   }
@@ -231,10 +242,12 @@ function buildEligiblePool(candidates, usedIds, counts,
     if (p.content_sensitivity === 'adult_excluded') return false;
     if (isSoftSensitiveCard(p) && counts.softSensitiveCount >= ADAPTIVE_SOFT_MAX) return false;
     const d = (p.domain && p.domain !== 'unknown') ? p.domain : 'unknown';
-    const sub = p.subdomain ?? null, ct = p.country_tag ?? null;
+    const sub = p.subdomain ?? null;
+    const ct  = effectiveCountryKey(p);
     if (!relaxCaps.domain    && (counts.domainCount[d]             ?? 0) >= ADAPTIVE_DOMAIN_MAX)    return false;
     if (!relaxCaps.subdomain && sub && (counts.subdomainCount[sub] ?? 0) >= ADAPTIVE_SUBDOMAIN_MAX) return false;
-    if (!relaxCaps.country   && ct  && (counts.countryCount[ct]    ?? 0) >= ADAPTIVE_COUNTRY_MAX)   return false;
+    const countryMax = ct === '_unknown_country' ? UNKNOWN_COUNTRY_MAX : ADAPTIVE_COUNTRY_MAX;
+    if (!relaxCaps.country && (counts.countryCount[ct] ?? 0) >= countryMax) return false;
     if (!relaxStreak.country   && blockedCountry   && ct  === blockedCountry)   return false;
     if (!relaxStreak.subdomain && blockedSubdomain && sub === blockedSubdomain) return false;
     if (!relaxStreak.domain    && blockedDomain    && d   === blockedDomain)    return false;
@@ -254,7 +267,7 @@ function weightedRandomPick(scored, rng) {
 }
 
 function pickNextAdaptiveCard({ candidates, profile, usedIds, counts, recentCards, rng, mode }) {
-  const ctRun  = runLengthAtEnd(recentCards, p => p.country_tag ?? null);
+  const ctRun  = runLengthAtEnd(recentCards, p => effectiveCountryKey(p));
   const subRun = runLengthAtEnd(recentCards, p => p.subdomain   ?? null);
   const domRun = runLengthAtEnd(recentCards, p => (p.domain && p.domain !== 'unknown') ? p.domain : null);
   const blockedCountry   = ctRun  && ctRun.length  >= ANTISTREAK_COUNTRY_MAX   ? ctRun.tag  : null;
@@ -319,8 +332,9 @@ function getInitialSessionCounts(deck) {
   for (const p of deck) {
     const d = p.domain || 'unknown';
     domainCount[d] = (domainCount[d] ?? 0) + 1;
-    if (p.subdomain)   subdomainCount[p.subdomain]   = (subdomainCount[p.subdomain]   ?? 0) + 1;
-    if (p.country_tag) countryCount[p.country_tag]   = (countryCount[p.country_tag]   ?? 0) + 1;
+    if (p.subdomain) subdomainCount[p.subdomain] = (subdomainCount[p.subdomain] ?? 0) + 1;
+    const ck = effectiveCountryKey(p);
+    countryCount[ck] = (countryCount[ck] ?? 0) + 1;
     if (isSoftSensitiveCard(p)) softSensitiveCount++;
   }
   return { softSensitiveCount, domainCount, subdomainCount, countryCount };
@@ -397,8 +411,8 @@ console.log(`\n── Suite: invariants over ${SUITE_RUNS} sessions (global) ─
     const adaptiveDeck = deck.slice(CALIB_SIZE);
     for (let i = ANTISTREAK_COUNTRY_MAX; i < adaptiveDeck.length; i++) {
       const run3 = adaptiveDeck.slice(i - ANTISTREAK_COUNTRY_MAX, i + 1);
-      const tags = run3.map(p => p.country_tag).filter(Boolean);
-      if (tags.length === ANTISTREAK_COUNTRY_MAX + 1 && new Set(tags).size === 1) streakCtViolations++;
+      const tags = run3.map(p => effectiveCountryKey(p));
+      if (new Set(tags).size === 1) streakCtViolations++;
     }
     for (let i = ANTISTREAK_SUBDOMAIN_MAX; i < adaptiveDeck.length; i++) {
       const run3 = adaptiveDeck.slice(i - ANTISTREAK_SUBDOMAIN_MAX, i + 1);
@@ -485,7 +499,7 @@ console.log('\n── F: India/religion regression ──');
       ...localCounts,
       domainCount:    { ...localCounts.domainCount,    [p.domain || 'unknown']: (localCounts.domainCount[p.domain || 'unknown'] ?? 0) + 1 },
       subdomainCount: { ...localCounts.subdomainCount, ...(p.subdomain ? { [p.subdomain]: (localCounts.subdomainCount[p.subdomain] ?? 0) + 1 } : {}) },
-      countryCount:   { ...localCounts.countryCount,   ...(p.country_tag ? { [p.country_tag]: (localCounts.countryCount[p.country_tag] ?? 0) + 1 } : {}) },
+      countryCount:   { ...localCounts.countryCount,   [effectiveCountryKey(p)]: (localCounts.countryCount[effectiveCountryKey(p)] ?? 0) + 1 },
     };
     recentCards.push(p);
   }
@@ -528,7 +542,7 @@ console.log('\n── G: Football-heavy profile ──');
       ...localCounts,
       domainCount:    { ...localCounts.domainCount,    [p.domain || 'unknown']: (localCounts.domainCount[p.domain || 'unknown'] ?? 0) + 1 },
       subdomainCount: { ...localCounts.subdomainCount, ...(p.subdomain ? { [p.subdomain]: (localCounts.subdomainCount[p.subdomain] ?? 0) + 1 } : {}) },
-      countryCount:   { ...localCounts.countryCount,   ...(p.country_tag ? { [p.country_tag]: (localCounts.countryCount[p.country_tag] ?? 0) + 1 } : {}) },
+      countryCount:   { ...localCounts.countryCount,   [effectiveCountryKey(p)]: (localCounts.countryCount[effectiveCountryKey(p)] ?? 0) + 1 },
     };
     recentCards.push(p);
   }
@@ -548,6 +562,36 @@ console.log('\n── H: Adaptive cards skip calibration cards ──');
     if (adaptiveIds.some(id => calibIds.has(id))) noOverlap = false;
   }
   check('adaptive cards never duplicate calibration cards', noOverlap);
+}
+
+// ── I: Null-country stress test ───────────────────────────────────────────────
+console.log('\n── I: Null-country cap (UNKNOWN_COUNTRY_MAX=8) ──');
+{
+  // Run 20 sessions with neutral profile; count null-country cards in adaptive phase.
+  // Each session must have ≤ UNKNOWN_COUNTRY_MAX null-country cards in adaptive tail.
+  let capViolations = 0;
+  let maxConsecutiveNullViolations = 0;
+
+  for (let run = 0; run < 20; run++) {
+    const { deck } = simulateSession(undefined, () => 'heard', () => Math.random());
+    const adaptiveDeck = deck.slice(CALIB_SIZE);
+
+    // Count total null-country cards in adaptive phase
+    const nullCount = adaptiveDeck.filter(p => !p.country_tag || p.country_tag === 'unknown').length;
+    if (nullCount > UNKNOWN_COUNTRY_MAX) capViolations++;
+
+    // Check no consecutive null-country streak > 2
+    for (let i = ANTISTREAK_COUNTRY_MAX; i < adaptiveDeck.length; i++) {
+      const run3 = adaptiveDeck.slice(i - ANTISTREAK_COUNTRY_MAX, i + 1);
+      const tags = run3.map(p => effectiveCountryKey(p));
+      if (new Set(tags).size === 1 && tags[0] === '_unknown_country') maxConsecutiveNullViolations++;
+    }
+  }
+
+  check(`I1: null-country adaptive cards ≤ ${UNKNOWN_COUNTRY_MAX} per session (20 runs)`,
+    capViolations === 0, `${capViolations}/20 exceeded cap`);
+  check('I2: no consecutive null-country streak > 2 (20 runs)',
+    maxConsecutiveNullViolations === 0, `${maxConsecutiveNullViolations} violations`);
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────────

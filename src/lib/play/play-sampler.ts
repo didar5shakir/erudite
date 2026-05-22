@@ -9,6 +9,7 @@ export const ADAPTIVE_TAIL_SIZE      = 70;
 export const ADAPTIVE_DOMAIN_MAX     = 30;
 export const ADAPTIVE_SUBDOMAIN_MAX  = 20;
 export const ADAPTIVE_COUNTRY_MAX    = 20;
+export const UNKNOWN_COUNTRY_MAX     = 8;
 export const ADAPTIVE_SOFT_MAX       = 2;
 export const TOP_K                   = 200;
 export const EXPLORATION_RATIO_EARLY = 0.20;
@@ -380,6 +381,12 @@ export function buildAdaptiveCandidates(
 
 // ── Adaptive tail helpers ─────────────────────────────────────────────────────
 
+function effectiveCountryKey(p: Person): string {
+  const ct = p.country_tag;
+  if (!ct || ct === 'unknown') return '_unknown_country';
+  return ct;
+}
+
 export function getInitialSessionCounts(calib: Person[]): SessionCounts {
   const domainCount:    Record<string, number> = {};
   const subdomainCount: Record<string, number> = {};
@@ -389,8 +396,9 @@ export function getInitialSessionCounts(calib: Person[]): SessionCounts {
   for (const p of calib) {
     const d = p.domain || 'unknown';
     domainCount[d] = (domainCount[d] ?? 0) + 1;
-    if (p.subdomain)   subdomainCount[p.subdomain]   = (subdomainCount[p.subdomain]   ?? 0) + 1;
-    if (p.country_tag) countryCount[p.country_tag]   = (countryCount[p.country_tag]   ?? 0) + 1;
+    if (p.subdomain) subdomainCount[p.subdomain] = (subdomainCount[p.subdomain] ?? 0) + 1;
+    const ck = effectiveCountryKey(p);
+    countryCount[ck] = (countryCount[ck] ?? 0) + 1;
     if (p.content_sensitivity === 'crime_sensitive' ||
         p.content_sensitivity === 'scandal_sensitive') softSensitiveCount++;
   }
@@ -547,12 +555,13 @@ function buildEligiblePool(
     if (isSoftSensitiveCard(p) && counts.softSensitiveCount >= ADAPTIVE_SOFT_MAX)     return false;
 
     const d   = p.domain       !== 'unknown' ? p.domain : 'unknown';
-    const sub = p.subdomain    ?? null;
-    const ct  = p.country_tag  ?? null;
+    const sub = p.subdomain ?? null;
+    const ct  = effectiveCountryKey(p);
 
     if (!relaxCaps.domain    && (counts.domainCount[d]             ?? 0) >= ADAPTIVE_DOMAIN_MAX)    return false;
     if (!relaxCaps.subdomain && sub && (counts.subdomainCount[sub] ?? 0) >= ADAPTIVE_SUBDOMAIN_MAX) return false;
-    if (!relaxCaps.country   && ct  && (counts.countryCount[ct]    ?? 0) >= ADAPTIVE_COUNTRY_MAX)   return false;
+    const countryMax = ct === '_unknown_country' ? UNKNOWN_COUNTRY_MAX : ADAPTIVE_COUNTRY_MAX;
+    if (!relaxCaps.country && (counts.countryCount[ct] ?? 0) >= countryMax) return false;
 
     if (!relaxStreak.country   && blockedCountry   && ct  === blockedCountry)   return false;
     if (!relaxStreak.subdomain && blockedSubdomain && sub === blockedSubdomain) return false;
@@ -597,7 +606,7 @@ export function pickNextAdaptiveCard({
   rng,
   mode,
 }: PickNextOptions): Person | null {
-  const ctRun  = runLengthAtEnd(recentCards, p => p.country_tag ?? null);
+  const ctRun  = runLengthAtEnd(recentCards, p => effectiveCountryKey(p));
   const subRun = runLengthAtEnd(recentCards, p => p.subdomain   ?? null);
   const domRun = runLengthAtEnd(recentCards, p => p.domain !== 'unknown' ? p.domain : null);
 

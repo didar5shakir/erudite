@@ -27,6 +27,7 @@ function makeLCG(seed) {
 const ADAPTIVE_DOMAIN_MAX     = 30;
 const ADAPTIVE_SUBDOMAIN_MAX  = 20;
 const ADAPTIVE_COUNTRY_MAX    = 20;
+const UNKNOWN_COUNTRY_MAX     = 8;
 const ADAPTIVE_SOFT_MAX       = 2;
 const TOP_K                   = 200;
 const ANTISTREAK_COUNTRY_MAX  = 2;
@@ -112,6 +113,12 @@ function emptyProfile() {
   };
 }
 
+function effectiveCountryKey(p) {
+  const ct = p.country_tag;
+  if (!ct || ct === 'unknown') return '_unknown_country';
+  return ct;
+}
+
 // ── Inlined pickNextAdaptiveCard ──────────────────────────────────────────────
 
 function runLengthAtEnd(cards, getTag) {
@@ -140,12 +147,13 @@ function buildEligiblePool(candidates, usedIds, counts,
     if (isSoftSensitiveCard(p) && counts.softSensitiveCount >= ADAPTIVE_SOFT_MAX) return false;
 
     const d   = (p.domain && p.domain !== 'unknown') ? p.domain : 'unknown';
-    const sub = p.subdomain   ?? null;
-    const ct  = p.country_tag ?? null;
+    const sub = p.subdomain ?? null;
+    const ct  = effectiveCountryKey(p);
 
     if (!relaxCaps.domain    && (counts.domainCount[d]             ?? 0) >= ADAPTIVE_DOMAIN_MAX)    return false;
     if (!relaxCaps.subdomain && sub && (counts.subdomainCount[sub] ?? 0) >= ADAPTIVE_SUBDOMAIN_MAX) return false;
-    if (!relaxCaps.country   && ct  && (counts.countryCount[ct]    ?? 0) >= ADAPTIVE_COUNTRY_MAX)   return false;
+    const countryMax = ct === '_unknown_country' ? UNKNOWN_COUNTRY_MAX : ADAPTIVE_COUNTRY_MAX;
+    if (!relaxCaps.country && (counts.countryCount[ct] ?? 0) >= countryMax) return false;
 
     if (!relaxStreak.country   && blockedCountry   && ct  === blockedCountry)   return false;
     if (!relaxStreak.subdomain && blockedSubdomain && sub === blockedSubdomain) return false;
@@ -166,7 +174,7 @@ function weightedRandomPick(scored, rng) {
 }
 
 function pickNextAdaptiveCard({ candidates, profile, usedIds, counts, recentCards, rng, mode }) {
-  const ctRun  = runLengthAtEnd(recentCards, p => p.country_tag ?? null);
+  const ctRun  = runLengthAtEnd(recentCards, p => effectiveCountryKey(p));
   const subRun = runLengthAtEnd(recentCards, p => p.subdomain   ?? null);
   const domRun = runLengthAtEnd(recentCards, p => (p.domain && p.domain !== 'unknown') ? p.domain : null);
 
@@ -233,8 +241,9 @@ function consumeCounts(counts, p) {
   };
   const d = (p.domain && p.domain !== 'unknown') ? p.domain : 'unknown';
   c.domainCount[d] = (c.domainCount[d] ?? 0) + 1;
-  if (p.subdomain)   c.subdomainCount[p.subdomain]   = (c.subdomainCount[p.subdomain]   ?? 0) + 1;
-  if (p.country_tag) c.countryCount[p.country_tag]   = (c.countryCount[p.country_tag]   ?? 0) + 1;
+  if (p.subdomain) c.subdomainCount[p.subdomain] = (c.subdomainCount[p.subdomain] ?? 0) + 1;
+  const ck = effectiveCountryKey(p);
+  c.countryCount[ck] = (c.countryCount[ck] ?? 0) + 1;
   return c;
 }
 
@@ -529,11 +538,12 @@ console.log('\n── G: Null/unknown tags ──');
   const profile = emptyProfile();
   const rng = makeLCG(10);
 
-  // Null/unknown tags don't cause a streak block
-  const recentNull = [p1, p1]; // two null-country cards — should NOT block anything
+  // Two null-country cards in recentCards → blockedCountry = '_unknown_country'.
+  // p3 (null-country) is blocked by streak, p2 (Germany) is eligible.
+  const recentNull = [p1, p1];
   const next = pickNextAdaptiveCard({ candidates, profile, usedIds: new Set([p1.wikidata_id]),
     counts: emptyCounts(), recentCards: recentNull, rng, mode: 'exploit' });
-  check('G1: null country in recentCards does not block non-null country', next !== null);
+  check('G1: null-country streak blocks further null-country; non-null country still picked', next?.country_tag === 'Germany', `got ${next?.country_tag}`);
   check('G2: null-tag cards are valid candidates', next?.wikidata_id !== undefined);
 
   // Picking a card with null domain doesn't crash and returns a valid card
@@ -541,6 +551,12 @@ console.log('\n── G: Null/unknown tags ──');
   const p = pickNextAdaptiveCard({ candidates: onlyNullDomain, profile, usedIds: new Set(),
     counts: emptyCounts(), recentCards: [], rng: makeLCG(11), mode: 'exploit' });
   check('G3: card with null/unknown tags does not crash picker', p !== null);
+
+  // UNKNOWN_COUNTRY_MAX cap: if countryCount._unknown_country >= UNKNOWN_COUNTRY_MAX, p1/p3 blocked
+  const nullCountryCapped = { ...emptyCounts(), countryCount: { '_unknown_country': UNKNOWN_COUNTRY_MAX } };
+  const p4 = pickNextAdaptiveCard({ candidates: [p1, p2, p3], profile, usedIds: new Set(),
+    counts: nullCountryCapped, recentCards: [], rng: makeLCG(12), mode: 'exploit' });
+  check('G4: _unknown_country cap blocks null-country cards → Germany picked', p4?.country_tag === 'Germany', `got ${p4?.country_tag}`);
 }
 
 // ── H: Explore mode ───────────────────────────────────────────────────────────
