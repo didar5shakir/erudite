@@ -17,15 +17,18 @@ const pools = JSON.parse(readFileSync(join(ROOT, 'public/data/play_pools.json'),
 
 const SESSION_CARD_COUNT  = 100;
 const CALIB_SIZE          = 30;
-const CALIB_EASY          = 10;
-const CALIB_MEDIUM        = 12;
-const CALIB_HARD          = 8;
+const CALIB_EASY          = 15;
+const CALIB_MEDIUM        = 10;
+const CALIB_HARD          = 5;
+const CALIB_KZ_EASY       = 8;
+const CALIB_KZ_MEDIUM     = 5;
+const CALIB_KZ_HARD       = 2;
 const CALIB_DOMAIN_MAX    = 5;
 const CALIB_SUBDOMAIN_MAX = 3;
 const CALIB_ERA_MAX       = 8;
 const CALIB_REGION_MAX    = 8;
-const CALIB_KZ_CA_TARGET  = 6;
-const CALIB_KZ_CA_MAX     = 8;
+const CALIB_KZ_CA_TARGET  = 15;
+const CALIB_KZ_CA_MAX     = 15;
 const CALIB_EASY_RANK_MAX   = 1500;
 const CALIB_MEDIUM_RANK_MAX = 6000;
 const CALIB_HARD_RANK_MAX   = 13000;
@@ -147,19 +150,22 @@ function createCalibrationBlock(safe, kzCaIds, region, usedIds) {
     }
   }
 
-  // Phase 2: fill by difficulty targets, prefer non-unknown era; cap rank per tier
+  // Phase 2: fill by difficulty targets; snapshot after Phase 1 so kz_ca contributions don't inflate counts
+  const phase1Snap = region === 'kz' ? { ...diffCount } : {};
+  const p2Count = diff => (diffCount[diff] ?? 0) - (phase1Snap[diff] ?? 0);
+
   for (const [diff, target, maxRank] of [
-    ['easy',   CALIB_EASY,   CALIB_EASY_RANK_MAX],
-    ['medium', CALIB_MEDIUM, CALIB_MEDIUM_RANK_MAX],
-    ['hard',   CALIB_HARD,   CALIB_HARD_RANK_MAX],
+    ['easy',   region === 'kz' ? CALIB_KZ_EASY   : CALIB_EASY,   CALIB_EASY_RANK_MAX],
+    ['medium', region === 'kz' ? CALIB_KZ_MEDIUM : CALIB_MEDIUM, CALIB_MEDIUM_RANK_MAX],
+    ['hard',   region === 'kz' ? CALIB_KZ_HARD   : CALIB_HARD,   CALIB_HARD_RANK_MAX],
   ]) {
     for (const p of shuffled) {
-      if ((diffCount[diff] ?? 0) >= target) break;
+      if (p2Count(diff) >= target) break;
       if (p.difficulty_bucket === diff && p.global_rank <= maxRank &&
           (p.era_bucket ?? 'unknown') !== 'unknown' && !isConstrained(p)) addCard(p);
     }
     for (const p of shuffled) {
-      if ((diffCount[diff] ?? 0) >= target) break;
+      if (p2Count(diff) >= target) break;
       if (p.difficulty_bucket === diff && p.global_rank <= maxRank && !isConstrained(p)) addCard(p);
     }
   }
@@ -416,6 +422,7 @@ function runSuite(label, region) {
   let minKzCa30 = Infinity, maxKzCa30 = 0;
   let minKzCaTotal = Infinity;
   let diffStats = { easy: 0, medium: 0, hard: 0 };
+  let diffStatsKzPhase2 = { easy: 0, medium: 0, hard: 0 };
   let sampleFirst30 = null;
   const totalRelax = { relaxedEra: 0, relaxedSub: 0, relaxedDomain: 0, relaxedDifficulty: 0 };
 
@@ -456,6 +463,9 @@ function runSuite(label, region) {
     for (const p of first) {
       const d = p.difficulty_bucket ?? 'unknown';
       if (d in diffStats) diffStats[d] += 1 / SUITE_RUNS;
+      if (region === 'kz' && !KZ_CA_QIDs.has(p.wikidata_id) && d in diffStatsKzPhase2) {
+        diffStatsKzPhase2[d] += 1 / SUITE_RUNS;
+      }
     }
 
     if (i === 0) sampleFirst30 = first;
@@ -479,15 +489,15 @@ function runSuite(label, region) {
 
   if (region !== 'kz') {
     check(`first 30 macro_region max ≤ ${CALIB_REGION_MAX}`, !regionViolation);
+    console.log(`  INFO  avg first-30 difficulty: easy=${diffStats.easy.toFixed(1)} medium=${diffStats.medium.toFixed(1)} hard=${diffStats.hard.toFixed(1)}`);
   } else {
-    check(`kz_ca in first 30 always 5–8 (min=${minKzCa30} max=${maxKzCa30})`,
-      minKzCa30 >= 5 && maxKzCa30 <= 8, `min=${minKzCa30} max=${maxKzCa30}`);
+    check(`kz_ca in first 30 always ≥ 14 (min=${minKzCa30} max=${maxKzCa30})`,
+      minKzCa30 >= 14, `min=${minKzCa30} max=${maxKzCa30}`);
     check(`kz_ca total in deck always ≥ 20 (min=${minKzCaTotal})`,
       minKzCaTotal >= 20, `min=${minKzCaTotal}`);
+    console.log(`  INFO  kz first-30: avg kz_ca=${((minKzCa30+maxKzCa30)/2).toFixed(1)} (min=${minKzCa30} max=${maxKzCa30})`);
+    console.log(`  INFO  kz Phase 2 (non-kz_ca) avg: easy=${diffStatsKzPhase2.easy.toFixed(1)} medium=${diffStatsKzPhase2.medium.toFixed(1)} hard=${diffStatsKzPhase2.hard.toFixed(1)}`);
   }
-
-  // Difficulty distribution in first 30 (informational)
-  console.log(`  INFO  avg first-30 difficulty: easy=${diffStats.easy.toFixed(1)} medium=${diffStats.medium.toFixed(1)} hard=${diffStats.hard.toFixed(1)}`);
   // Relaxation log across 100 runs
   const anyRelaxed = Object.values(totalRelax).some(v => v > 0);
   if (anyRelaxed) {

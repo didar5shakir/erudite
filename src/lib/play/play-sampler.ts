@@ -77,9 +77,16 @@ const KZ_CA_REMAINING = 24;
 
 // ── Calibration block constants ───────────────────────────────────────────────
 
-const CALIB_EASY          = 10;
-const CALIB_MEDIUM        = 12;
-const CALIB_HARD          = 8;
+// Default mode (all 30 slots difficulty-based)
+const CALIB_EASY          = 15;
+const CALIB_MEDIUM        = 10;
+const CALIB_HARD          = 5;
+
+// kz mode Phase 2 (15 remaining slots after 15 kz_ca_top in Phase 1)
+// Proportional to default 15/10/5: ×0.5 → 8/5/2
+const CALIB_KZ_EASY       = 8;
+const CALIB_KZ_MEDIUM     = 5;
+const CALIB_KZ_HARD       = 2;
 
 // Rank caps for calibration sampling — narrower than full bucket ranges so that
 // deep-tail figures (rank >13 000) never appear in the first 30 cards.
@@ -90,8 +97,8 @@ const CALIB_DOMAIN_MAX    = 5;
 const CALIB_SUBDOMAIN_MAX = 3;
 const CALIB_ERA_MAX       = 8;
 const CALIB_REGION_MAX    = 8;  // default mode only
-const CALIB_KZ_CA_TARGET  = 6;  // seed count for kz calibration phase
-const CALIB_KZ_CA_MAX     = 8;  // hard cap for kz_ca in calibration block
+const CALIB_KZ_CA_TARGET  = 15; // seed count for kz Phase 1
+const CALIB_KZ_CA_MAX     = 15; // hard cap for kz_ca in calibration block
 
 // ── Sensitive filter ──────────────────────────────────────────────────────────
 
@@ -208,22 +215,27 @@ function createCalibrationBlock(
     }
   }
 
-  // Phase 2: fill difficulty targets; prefer non-unknown era; cap rank per tier
+  // Phase 2: fill difficulty targets; prefer non-unknown era; cap rank per tier.
+  // kz uses proportionally scaled targets (15 slots remain after Phase 1).
+  // Snapshot diffCount after Phase 1 so kz_ca_top contributions don't inflate counts.
+  const phase1Snap: Record<string, number> = region === 'kz' ? { ...diffCount } : {};
+  const p2Count = (diff: string) => (diffCount[diff] ?? 0) - (phase1Snap[diff] ?? 0);
+
   const diffTargets: Array<[string, number, number]> = [
-    ['easy',   CALIB_EASY,   CALIB_EASY_RANK_MAX],
-    ['medium', CALIB_MEDIUM, CALIB_MEDIUM_RANK_MAX],
-    ['hard',   CALIB_HARD,   CALIB_HARD_RANK_MAX],
+    ['easy',   region === 'kz' ? CALIB_KZ_EASY   : CALIB_EASY,   CALIB_EASY_RANK_MAX],
+    ['medium', region === 'kz' ? CALIB_KZ_MEDIUM : CALIB_MEDIUM, CALIB_MEDIUM_RANK_MAX],
+    ['hard',   region === 'kz' ? CALIB_KZ_HARD   : CALIB_HARD,   CALIB_HARD_RANK_MAX],
   ];
   for (const [diff, target, maxRank] of diffTargets) {
     for (const p of shuffled) {
-      if ((diffCount[diff] ?? 0) >= target) break;
+      if (p2Count(diff) >= target) break;
       if (p.difficulty_bucket === diff &&
           p.global_rank <= maxRank &&
           (p.era_bucket ?? 'unknown') !== 'unknown' &&
           !isConstrained(p)) addCard(p);
     }
     for (const p of shuffled) {
-      if ((diffCount[diff] ?? 0) >= target) break;
+      if (p2Count(diff) >= target) break;
       if (p.difficulty_bucket === diff && p.global_rank <= maxRank && !isConstrained(p)) addCard(p);
     }
   }
