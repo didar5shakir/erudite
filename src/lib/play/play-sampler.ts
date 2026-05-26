@@ -79,15 +79,15 @@ const KZ_CA_REMAINING = 24;
 // ── Calibration block constants ───────────────────────────────────────────────
 
 // Default mode (all 30 slots difficulty-based)
-const CALIB_EASY          = 15;
-const CALIB_MEDIUM        = 10;
-const CALIB_HARD          = 5;
+const CALIB_EASY          = 18;
+const CALIB_MEDIUM        = 12;
+const CALIB_HARD          = 0;
 
 // kz mode Phase 2 (15 remaining slots after 15 kz_ca_top in Phase 1)
-// Proportional to default 15/10/5: ×0.5 → 8/5/2
-const CALIB_KZ_EASY       = 8;
-const CALIB_KZ_MEDIUM     = 5;
-const CALIB_KZ_HARD       = 2;
+// Proportional to default 18/12/0: ×0.5 → 9/6/0
+const CALIB_KZ_EASY       = 9;
+const CALIB_KZ_MEDIUM     = 6;
+const CALIB_KZ_HARD       = 0;
 
 // Rank caps for calibration sampling — narrower than full bucket ranges so that
 // deep-tail figures (rank >13 000) never appear in the first 30 cards.
