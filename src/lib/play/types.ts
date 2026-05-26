@@ -84,6 +84,7 @@ export interface Person {
   era_bucket: EraBucket;
   difficulty_bucket: DifficultyBucket;
   content_sensitivity: ContentSensitivity;
+  isRegionalSeed?: boolean;  // true when card belongs to the active region's seed pool
 }
 
 // ── Структура play_pools.json ─────────────────────────────────────────────────

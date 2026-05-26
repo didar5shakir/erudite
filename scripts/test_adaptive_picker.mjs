@@ -75,6 +75,16 @@ function getDiffMult(bucket, answer) {
   if (bucket === 'hard') return 0.9; return 0.8;
 }
 
+function getRegionalSeedMult(bucket, answer) {
+  if (answer === 'know') {
+    if (bucket === 'easy') return 1.05; if (bucket === 'medium') return 1.15;
+    if (bucket === 'hard') return 1.25; return 1.10;
+  }
+  if (answer === 'heard') return 1.0;
+  if (bucket === 'easy') return 0.60; if (bucket === 'medium') return 0.75;
+  if (bucket === 'hard') return 0.90; return 0.75;
+}
+
 function updateProfile(profile, person, answer) {
   const w = {
     domain:      { ...profile.weights.domain },
@@ -88,7 +98,9 @@ function updateProfile(profile, person, answer) {
     if (!isValidTag(tag)) return;
     w[key][tag] = clamp((w[key][tag] ?? 1.0) * mult);
   };
-  const base   = getDiffMult(person.difficulty_bucket, answer);
+  const base   = person.isRegionalSeed
+    ? getRegionalSeedMult(person.difficulty_bucket, answer)
+    : getDiffMult(person.difficulty_bucket, answer);
   const s05    = soften(base, 0.5);
   const s04    = soften(base, 0.4);
   const s02    = soften(base, 0.2);
@@ -612,6 +624,47 @@ console.log('\n── I: Determinism ──');
   check('I1: same seed → same result', r1 === r2, `${r1} vs ${r2}`);
   check('I2: different seeds → different results (probabilistic)', r1 !== r3 || r3 === undefined,
     '(both null unlikely)');
+}
+
+// ── J: Regional seed soft multipliers ────────────────────────────────────────
+console.log('\n── J: Regional seed soft multipliers ──');
+{
+  // Helper: one updateProfile call → return country weight for given tag
+  function weightAfter(isRegionalSeed, difficulty, answer, countryTag = 'Kazakhstan') {
+    let profile = emptyProfile();
+    const card = makePerson({ country_tag: countryTag, difficulty_bucket: difficulty, isRegionalSeed });
+    profile = updateProfile(profile, card, answer);
+    return profile.weights.country[countryTag] ?? 1.0;
+  }
+
+  const eps = 0.001;
+
+  // J1: regional seed hard know → 1.25, NOT normal hard 1.5
+  const j1 = weightAfter(true, 'hard', 'know');
+  check('J1: regional seed hard know → weight 1.25', Math.abs(j1 - 1.25) < eps, `got ${j1}`);
+
+  // J2: regional seed easy dont_know → 0.60, NOT normal easy 0.5
+  const j2 = weightAfter(true, 'easy', 'dont_know');
+  check('J2: regional seed easy dont_know → weight 0.60', Math.abs(j2 - 0.60) < eps, `got ${j2}`);
+
+  // J3: regional seed easy know → 1.05, NOT normal easy 1.1
+  const j3 = weightAfter(true, 'easy', 'know');
+  check('J3: regional seed easy know → weight 1.05', Math.abs(j3 - 1.05) < eps, `got ${j3}`);
+
+  // J4: non-seed hard know → normal 1.5 unchanged
+  const j4 = weightAfter(false, 'hard', 'know');
+  check('J4: non-seed hard know → weight 1.5 (normal unchanged)', Math.abs(j4 - 1.5) < eps, `got ${j4}`);
+
+  // J5: macro_region=kz_ca but isRegionalSeed=false → normal multiplier, NOT soft
+  let profile = emptyProfile();
+  const nonSeedKzCard = makePerson({
+    country_tag: 'Kazakhstan', macro_region: 'kz_ca',
+    difficulty_bucket: 'hard', isRegionalSeed: false,
+  });
+  profile = updateProfile(profile, nonSeedKzCard, 'know');
+  const j5 = profile.weights.country['Kazakhstan'] ?? 1.0;
+  check('J5: kz_ca card without isRegionalSeed flag → normal hard multiplier 1.5',
+    Math.abs(j5 - 1.5) < eps, `got ${j5}`);
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────────

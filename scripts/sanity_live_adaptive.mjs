@@ -118,7 +118,7 @@ function createCalibrationBlock(safe, kzCaIds, region, usedIds) {
   if (region === 'kz') {
     for (const p of shuffled) {
       if (kzCaCount >= CALIB_KZ_CA_TARGET) break;
-      if (kzCaIds.has(p.wikidata_id) && !isConstrained(p)) addCard(p);
+      if (kzCaIds.has(p.wikidata_id) && !isConstrained(p)) addCard({ ...p, isRegionalSeed: true });
     }
   }
   const phase1Snap = region === 'kz' ? { ...diffCount } : {};
@@ -166,6 +166,16 @@ function getDiffMult(bucket, answer) {
   if (bucket === 'easy') return 0.5; if (bucket === 'medium') return 0.7;
   if (bucket === 'hard') return 0.9; return 0.8;
 }
+
+function getRegionalSeedMult(bucket, answer) {
+  if (answer === 'know') {
+    if (bucket === 'easy') return 1.05; if (bucket === 'medium') return 1.15;
+    if (bucket === 'hard') return 1.25; return 1.10;
+  }
+  if (answer === 'heard') return 1.0;
+  if (bucket === 'easy') return 0.60; if (bucket === 'medium') return 0.75;
+  if (bucket === 'hard') return 0.90; return 0.75;
+}
 function isValidTag(v) { return !!v && v !== 'unknown'; }
 
 function emptyProfile() {
@@ -190,7 +200,9 @@ function updateProfile(profile, person, answer) {
     if (!isValidTag(tag)) return;
     w[key][tag] = clamp((w[key][tag] ?? 1.0) * mult);
   };
-  const base = getDiffMult(person.difficulty_bucket, answer);
+  const base = person.isRegionalSeed
+    ? getRegionalSeedMult(person.difficulty_bucket, answer)
+    : getDiffMult(person.difficulty_bucket, answer);
   apply('occupation',  person.occupation,  base);
   apply('subdomain',   person.subdomain,   base);
   apply('country',     person.country_tag, base);

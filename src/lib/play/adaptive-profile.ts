@@ -88,6 +88,25 @@ export function getDifficultyAnswerMultiplier(
   return 0.8; // unknown
 }
 
+export function getRegionalSeedAnswerMultiplier(
+  difficultyBucket: string | null | undefined,
+  answer: AnswerValue,
+): number {
+  const d = difficultyBucket ?? 'unknown';
+  if (answer === 'know') {
+    if (d === 'easy')   return 1.05;
+    if (d === 'medium') return 1.15;
+    if (d === 'hard')   return 1.25;
+    return 1.10; // unknown
+  }
+  if (answer === 'heard') return 1.0;
+  // dont_know
+  if (d === 'easy')   return 0.60;
+  if (d === 'medium') return 0.75;
+  if (d === 'hard')   return 0.90;
+  return 0.75; // unknown
+}
+
 export function softenMultiplier(multiplier: number, strength: number): number {
   return 1 + (multiplier - 1) * strength;
 }
@@ -156,6 +175,7 @@ export function updateAdaptiveProfile(
     | 'macro_region'
     | 'era_bucket'
     | 'difficulty_bucket'
+    | 'isRegionalSeed'
   >,
   answer: AnswerValue,
   options: { timestamp: number },
@@ -169,7 +189,9 @@ export function updateAdaptiveProfile(
     era:         { ...profile.weights.era },
   };
 
-  const base = getDifficultyAnswerMultiplier(person.difficulty_bucket, answer);
+  const base = person.isRegionalSeed
+    ? getRegionalSeedAnswerMultiplier(person.difficulty_bucket, answer)
+    : getDifficultyAnswerMultiplier(person.difficulty_bucket, answer);
   const soft05 = softenMultiplier(base, 0.5);
   const soft04 = softenMultiplier(base, 0.4);
   const soft02 = softenMultiplier(base, 0.2);

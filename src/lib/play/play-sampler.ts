@@ -179,8 +179,8 @@ function createCalibrationBlock(
     return false;
   }
 
-  function addCard(p: Person): void {
-    block.push(p);
+  function addCard(p: Person, isRegionalSeed = false): void {
+    block.push(isRegionalSeed ? { ...p, isRegionalSeed: true } : p);
     blockIds.add(p.wikidata_id);
     usedIds.add(p.wikidata_id);
     const d   = p.domain       || 'unknown';
@@ -212,7 +212,7 @@ function createCalibrationBlock(
   if (region === 'kz') {
     for (const p of shuffled) {
       if (kzCaCount >= CALIB_KZ_CA_TARGET) break;
-      if (kzCaIds.has(p.wikidata_id) && !isConstrained(p)) addCard(p);
+      if (kzCaIds.has(p.wikidata_id) && !isConstrained(p)) addCard(p, true);
     }
   }
 
@@ -366,13 +366,17 @@ export function buildAdaptiveCandidates(
     ? [safe.kz_ca_top ?? [], safe.top_30000, safe.ru_quota, safe.kz_quota, safe.hpi_quota]
     : [safe.top_30000, safe.ru_quota, safe.kz_quota, safe.hpi_quota];
 
+  const regionalSeedIds: ReadonlySet<string> = region === 'kz'
+    ? new Set<string>((safe.kz_ca_top ?? []).map(p => p.wikidata_id))
+    : new Set<string>();
+
   const seenQids = new Set<string>();
   const candidates: Person[] = [];
   for (const src of srcOrder) {
     for (const p of src) {
       if (!seenQids.has(p.wikidata_id) && !usedIds.has(p.wikidata_id)) {
         seenQids.add(p.wikidata_id);
-        candidates.push(p);
+        candidates.push(regionalSeedIds.has(p.wikidata_id) ? { ...p, isRegionalSeed: true } : p);
       }
     }
   }
