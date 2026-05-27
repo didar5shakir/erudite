@@ -60,7 +60,7 @@ const ERA_ORDER = [
   'ancient_bc','classical_late_antiquity','medieval','early_modern',
   'industrial_modern','postwar_births','late_20c_births','modern_media_births','digital_births',
 ];
-const MIN_WEIGHT = 0.1, MAX_WEIGHT = 5.0;
+const MIN_WEIGHT = 0.1, MAX_WEIGHT = 3.0;
 const clamp = v => Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, v));
 
 function soften(base, strength) { return 1 + (base - 1) * strength; }
@@ -665,6 +665,57 @@ console.log('\n── J: Regional seed soft multipliers ──');
   const j5 = profile.weights.country['Kazakhstan'] ?? 1.0;
   check('J5: kz_ca card without isRegionalSeed flag → normal hard multiplier 1.5',
     Math.abs(j5 - 1.5) < eps, `got ${j5}`);
+}
+
+// ── K: MAX_WEIGHT = 3 clamping ────────────────────────────────────────────────
+console.log('\n── K: MAX_WEIGHT = 3 clamping ──');
+{
+  const eps = 0.001;
+
+  // K1: 3× non-seed hard know on same card → caps at 3.0, not 3.375 or 5.0
+  {
+    let profile = emptyProfile();
+    const card = makePerson({ country_tag: 'Germany', difficulty_bucket: 'hard' });
+    profile = updateProfile(profile, card, 'know'); // ×1.5 → 1.5
+    profile = updateProfile(profile, card, 'know'); // ×1.5 → 2.25
+    profile = updateProfile(profile, card, 'know'); // ×1.5 → 3.375 → clamped 3.0
+    const w = profile.weights.country['Germany'] ?? 1.0;
+    check('K1: 3× non-seed hard know → country caps at 3.0 (not 3.375)',
+      Math.abs(w - 3.0) < eps, `got ${w.toFixed(4)}`);
+  }
+
+  // K2: weight at cap (3.0) drops below cap on hard dont_know (3.0 × 0.9 = 2.7)
+  {
+    let profile = emptyProfile();
+    const card = makePerson({ country_tag: 'Germany', difficulty_bucket: 'hard' });
+    profile = updateProfile(profile, card, 'know');
+    profile = updateProfile(profile, card, 'know');
+    profile = updateProfile(profile, card, 'know'); // capped at 3.0
+    profile = updateProfile(profile, card, 'dont_know'); // 3.0 × 0.9 = 2.7
+    const w = profile.weights.country['Germany'] ?? 1.0;
+    check('K2: capped weight (3.0) + hard dont_know → 2.7 (breakable downward)',
+      Math.abs(w - 2.7) < eps, `got ${w.toFixed(4)}`);
+  }
+
+  // K3: regional seed reaches cap later — 4× hard know stays below 3.0 (1.25^4 = 2.441)
+  {
+    let profile = emptyProfile();
+    const rsCard = makePerson({ country_tag: 'Kazakhstan', difficulty_bucket: 'hard', isRegionalSeed: true });
+    for (let i = 0; i < 4; i++) profile = updateProfile(profile, rsCard, 'know');
+    const w = profile.weights.country['Kazakhstan'] ?? 1.0;
+    check('K3: regional seed 4× hard know → 2.44, still below 3.0',
+      w < 3.0 - eps, `got ${w.toFixed(4)}`);
+  }
+
+  // K4: regional seed 5× hard know → caps at 3.0 (1.25^5 = 3.052 → clamped)
+  {
+    let profile = emptyProfile();
+    const rsCard = makePerson({ country_tag: 'Kazakhstan', difficulty_bucket: 'hard', isRegionalSeed: true });
+    for (let i = 0; i < 5; i++) profile = updateProfile(profile, rsCard, 'know');
+    const w = profile.weights.country['Kazakhstan'] ?? 1.0;
+    check('K4: regional seed 5× hard know → caps at 3.0 (not 3.052)',
+      Math.abs(w - 3.0) < eps, `got ${w.toFixed(4)}`);
+  }
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────────

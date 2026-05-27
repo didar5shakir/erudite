@@ -154,7 +154,7 @@ const ERA_ORDER = [
   'ancient_bc','classical_late_antiquity','medieval','early_modern',
   'industrial_modern','postwar_births','late_20c_births','modern_media_births','digital_births',
 ];
-const MIN_WEIGHT = 0.1, MAX_WEIGHT = 5.0;
+const MIN_WEIGHT = 0.1, MAX_WEIGHT = 3.0;
 const clamp = v => Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, v));
 function soften(base, s) { return 1 + (base - 1) * s; }
 function getDiffMult(bucket, answer) {

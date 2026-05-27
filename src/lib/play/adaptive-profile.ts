@@ -45,7 +45,7 @@ export interface AdaptiveProfile {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const MIN_WEIGHT = 0.1;
-const MAX_WEIGHT = 5.0;
+const MAX_WEIGHT = 3.0;
 
 export const ERA_ORDER = [
   'ancient_bc',
