@@ -276,3 +276,27 @@ export function getCardFitScore(
 
   return wSum === 0 ? 1.0 : score / wSum;
 }
+
+// ── Hard gate helper ──────────────────────────────────────────────────────────
+
+export const HARD_UNLOCK_THRESHOLD = 2.0;
+
+export function getThematicConfidence(
+  person: Pick<Person, 'occupation' | 'subdomain' | 'domain'>,
+  profile: AdaptiveProfile,
+): number {
+  let best = 0;
+  if (isValidTag(person.occupation)) {
+    const w = profile.weights.occupation[person.occupation] ?? 1.0;
+    if (w > best) best = w;
+  }
+  if (isValidTag(person.subdomain)) {
+    const w = profile.weights.subdomain[person.subdomain] ?? 1.0;
+    if (w > best) best = w;
+  }
+  if (isValidTag(person.domain)) {
+    const w = profile.weights.domain[person.domain] ?? 1.0;
+    if (w > best) best = w;
+  }
+  return best;
+}

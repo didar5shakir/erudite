@@ -1,6 +1,6 @@
 import type { Person, PlayPools } from './types';
 import { SENSITIVE_OCCUPATIONS } from './localized-labels';
-import { getCardFitScore } from './adaptive-profile';
+import { getCardFitScore, getThematicConfidence, HARD_UNLOCK_THRESHOLD } from './adaptive-profile';
 import type { AdaptiveProfile } from './adaptive-profile';
 
 export const SESSION_CARD_COUNT = 100;
@@ -552,6 +552,7 @@ function buildEligiblePool(
   blockedDomain:    string | null,
   relaxStreak:      { country?: boolean; subdomain?: boolean; domain?: boolean },
   relaxCaps:        { country?: boolean; subdomain?: boolean; domain?: boolean },
+  profile:          AdaptiveProfile,
 ): Person[] {
   return candidates.filter(p => {
     if (usedIds.has(p.wikidata_id))                                                   return false;
@@ -570,6 +571,9 @@ function buildEligiblePool(
     if (!relaxStreak.country   && blockedCountry   && ct  === blockedCountry)   return false;
     if (!relaxStreak.subdomain && blockedSubdomain && sub === blockedSubdomain) return false;
     if (!relaxStreak.domain    && blockedDomain    && d   === blockedDomain)    return false;
+
+    if (p.difficulty_bucket === 'hard' && !p.isRegionalSeed &&
+        getThematicConfidence(p, profile) < HARD_UNLOCK_THRESHOLD) return false;
 
     return true;
   });
@@ -639,6 +643,7 @@ export function pickNextAdaptiveCard({
       candidates, usedIds, counts,
       blockedCountry, blockedSubdomain, blockedDomain,
       relaxStreak, relaxCaps,
+      profile,
     );
     if (eligible.length === 0) continue;
 

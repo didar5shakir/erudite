@@ -155,6 +155,7 @@ const ERA_ORDER = [
   'industrial_modern','postwar_births','late_20c_births','modern_media_births','digital_births',
 ];
 const MIN_WEIGHT = 0.1, MAX_WEIGHT = 3.0;
+const HARD_UNLOCK_THRESHOLD = 2.0;
 const clamp = v => Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, v));
 function soften(base, s) { return 1 + (base - 1) * s; }
 function getDiffMult(bucket, answer) {
@@ -230,6 +231,23 @@ function getCardFitScore(person, profile) {
   return wSum === 0 ? 1.0 : score / wSum;
 }
 
+function getThematicConfidence(person, profile) {
+  let best = 0;
+  if (isValidTag(person.occupation)) {
+    const w = profile.weights.occupation[person.occupation] ?? 1.0;
+    if (w > best) best = w;
+  }
+  if (isValidTag(person.subdomain)) {
+    const w = profile.weights.subdomain[person.subdomain] ?? 1.0;
+    if (w > best) best = w;
+  }
+  if (isValidTag(person.domain)) {
+    const w = profile.weights.domain[person.domain] ?? 1.0;
+    if (w > best) best = w;
+  }
+  return best;
+}
+
 // ── pickNextAdaptiveCard (mirrors play-sampler.ts) ────────────────────────────
 
 function isSoftSensitiveCard(p) {
@@ -248,7 +266,7 @@ function runLengthAtEnd(cards, getTag) {
 }
 
 function buildEligiblePool(candidates, usedIds, counts,
-  blockedCountry, blockedSubdomain, blockedDomain, relaxStreak, relaxCaps) {
+  blockedCountry, blockedSubdomain, blockedDomain, relaxStreak, relaxCaps, profile) {
   return candidates.filter(p => {
     if (usedIds.has(p.wikidata_id)) return false;
     if (p.content_sensitivity === 'adult_excluded') return false;
@@ -263,6 +281,8 @@ function buildEligiblePool(candidates, usedIds, counts,
     if (!relaxStreak.country   && blockedCountry   && ct  === blockedCountry)   return false;
     if (!relaxStreak.subdomain && blockedSubdomain && sub === blockedSubdomain) return false;
     if (!relaxStreak.domain    && blockedDomain    && d   === blockedDomain)    return false;
+    if (p.difficulty_bucket === 'hard' && !p.isRegionalSeed &&
+        getThematicConfidence(p, profile) < HARD_UNLOCK_THRESHOLD) return false;
     return true;
   });
 }
@@ -297,7 +317,7 @@ function pickNextAdaptiveCard({ candidates, profile, usedIds, counts, recentCard
   ];
   for (const { relaxStreak, relaxCaps } of relaxLevels) {
     const eligible = buildEligiblePool(candidates, usedIds, counts,
-      blockedCountry, blockedSubdomain, blockedDomain, relaxStreak, relaxCaps);
+      blockedCountry, blockedSubdomain, blockedDomain, relaxStreak, relaxCaps, profile);
     if (eligible.length === 0) continue;
     if (mode === 'explore') return eligible[Math.floor(rng() * eligible.length)];
     const scored = eligible

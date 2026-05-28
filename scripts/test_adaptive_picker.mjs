@@ -61,6 +61,7 @@ const ERA_ORDER = [
   'industrial_modern','postwar_births','late_20c_births','modern_media_births','digital_births',
 ];
 const MIN_WEIGHT = 0.1, MAX_WEIGHT = 3.0;
+const HARD_UNLOCK_THRESHOLD = 2.0;
 const clamp = v => Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, v));
 
 function soften(base, strength) { return 1 + (base - 1) * strength; }
@@ -116,6 +117,23 @@ function updateProfile(profile, person, answer) {
   return { ...profile, weights: w };
 }
 
+function getThematicConfidence(person, profile) {
+  let best = 0;
+  if (isValidTag(person.occupation)) {
+    const w = profile.weights.occupation[person.occupation] ?? 1.0;
+    if (w > best) best = w;
+  }
+  if (isValidTag(person.subdomain)) {
+    const w = profile.weights.subdomain[person.subdomain] ?? 1.0;
+    if (w > best) best = w;
+  }
+  if (isValidTag(person.domain)) {
+    const w = profile.weights.domain[person.domain] ?? 1.0;
+    if (w > best) best = w;
+  }
+  return best;
+}
+
 function emptyProfile() {
   return {
     version: 1,
@@ -152,7 +170,7 @@ function isSoftSensitiveCard(p) {
 
 function buildEligiblePool(candidates, usedIds, counts,
   blockedCountry, blockedSubdomain, blockedDomain,
-  relaxStreak, relaxCaps) {
+  relaxStreak, relaxCaps, profile) {
   return candidates.filter(p => {
     if (usedIds.has(p.wikidata_id))                                        return false;
     if (p.content_sensitivity === 'adult_excluded')                        return false;
@@ -170,6 +188,10 @@ function buildEligiblePool(candidates, usedIds, counts,
     if (!relaxStreak.country   && blockedCountry   && ct  === blockedCountry)   return false;
     if (!relaxStreak.subdomain && blockedSubdomain && sub === blockedSubdomain) return false;
     if (!relaxStreak.domain    && blockedDomain    && d   === blockedDomain)    return false;
+
+    if (p.difficulty_bucket === 'hard' && !p.isRegionalSeed &&
+        getThematicConfidence(p, profile) < HARD_UNLOCK_THRESHOLD) return false;
+
     return true;
   });
 }
@@ -207,7 +229,7 @@ function pickNextAdaptiveCard({ candidates, profile, usedIds, counts, recentCard
   for (const { relaxStreak, relaxCaps } of relaxLevels) {
     const eligible = buildEligiblePool(
       candidates, usedIds, counts, blockedCountry, blockedSubdomain, blockedDomain,
-      relaxStreak, relaxCaps,
+      relaxStreak, relaxCaps, profile,
     );
     if (eligible.length === 0) continue;
     if (mode === 'explore') return eligible[Math.floor(rng() * eligible.length)];
@@ -665,6 +687,94 @@ console.log('\n── J: Regional seed soft multipliers ──');
   const j5 = profile.weights.country['Kazakhstan'] ?? 1.0;
   check('J5: kz_ca card without isRegionalSeed flag → normal hard multiplier 1.5',
     Math.abs(j5 - 1.5) < eps, `got ${j5}`);
+}
+
+// ── L: Hard gate by thematic confidence ─────────────────────────────────────
+console.log('\n── L: Hard gate by thematic confidence ──');
+{
+  // L1: hard politician — country/kz_ca high, but domain.politics=1.4 / POLITICIAN=0.9 → blocked
+  {
+    const card = makePerson({
+      occupation: 'POLITICIAN', domain: 'politics', subdomain: null,
+      country_tag: 'Kazakhstan', macro_region: 'kz_ca',
+      difficulty_bucket: 'hard',
+    });
+    const profile = emptyProfile();
+    profile.weights.country['Kazakhstan'] = 3.0;
+    profile.weights.macroRegion['kz_ca']  = 3.0;
+    profile.weights.domain['politics']    = 1.4;
+    profile.weights.occupation['POLITICIAN'] = 0.9;
+    const result = pickNextAdaptiveCard({
+      candidates: [card], profile, usedIds: new Set(),
+      counts: emptyCounts(), recentCards: [], rng: makeLCG(100), mode: 'exploit',
+    });
+    check('L1: hard politician with KZ/kz_ca=3 but politics=1.4/POLITICIAN=0.9 → blocked',
+      result === null, `got ${result?.name}`);
+  }
+
+  // L2: hard boxer — subdomain.boxing=2.2 → allowed
+  {
+    const card = makePerson({
+      occupation: 'BOXER', domain: 'sports', subdomain: 'boxing',
+      difficulty_bucket: 'hard',
+    });
+    const profile = emptyProfile();
+    profile.weights.subdomain['boxing'] = 2.2;
+    const result = pickNextAdaptiveCard({
+      candidates: [card], profile, usedIds: new Set(),
+      counts: emptyCounts(), recentCards: [], rng: makeLCG(101), mode: 'exploit',
+    });
+    check('L2: hard boxer with boxing=2.2 → allowed',
+      result !== null, `got null`);
+  }
+
+  // L3: easy/medium cards not blocked regardless of thematic confidence
+  {
+    const profile = emptyProfile(); // all weights neutral 1.0
+    const medCard  = makePerson({ occupation: 'POLITICIAN', domain: 'politics', difficulty_bucket: 'medium' });
+    const easyCard = makePerson({ occupation: 'POLITICIAN', domain: 'politics', difficulty_bucket: 'easy' });
+    const hardCard = makePerson({ occupation: 'POLITICIAN', domain: 'politics', difficulty_bucket: 'hard' });
+    const rBase    = { profile, usedIds: new Set(), counts: emptyCounts(), recentCards: [] };
+    const rMed  = pickNextAdaptiveCard({ candidates: [medCard],  ...rBase, rng: makeLCG(102), mode: 'exploit' });
+    const rEasy = pickNextAdaptiveCard({ candidates: [easyCard], ...rBase, rng: makeLCG(103), mode: 'exploit' });
+    const rHard = pickNextAdaptiveCard({ candidates: [hardCard], ...rBase, rng: makeLCG(104), mode: 'exploit' });
+    check('L3a: medium card with neutral profile → not blocked', rMed  !== null);
+    check('L3b: easy card with neutral profile → not blocked',   rEasy !== null);
+    check('L3c: hard card with neutral profile → blocked',       rHard === null);
+  }
+
+  // L4: isRegionalSeed hard card bypasses gate even with neutral profile
+  {
+    const rsCard = makePerson({
+      occupation: 'POLITICIAN', domain: 'politics',
+      difficulty_bucket: 'hard', isRegionalSeed: true,
+    });
+    const profile = emptyProfile();
+    const result = pickNextAdaptiveCard({
+      candidates: [rsCard], profile, usedIds: new Set(),
+      counts: emptyCounts(), recentCards: [], rng: makeLCG(105), mode: 'exploit',
+    });
+    check('L4: isRegionalSeed hard card with neutral profile → not blocked', result !== null);
+  }
+
+  // L5: country=3 / kz_ca=3 / era=3 alone do NOT unlock hard (occupation/subdomain/domain neutral)
+  {
+    const card = makePerson({
+      occupation: 'POLITICIAN', domain: 'politics', subdomain: null,
+      country_tag: 'Kazakhstan', macro_region: 'kz_ca', era_bucket: 'medieval',
+      difficulty_bucket: 'hard',
+    });
+    const profile = emptyProfile();
+    profile.weights.country['Kazakhstan'] = 3.0;
+    profile.weights.macroRegion['kz_ca']  = 3.0;
+    profile.weights.era['medieval']       = 3.0;
+    // domain.politics / occupation.POLITICIAN not set → default 1.0
+    const result = pickNextAdaptiveCard({
+      candidates: [card], profile, usedIds: new Set(),
+      counts: emptyCounts(), recentCards: [], rng: makeLCG(106), mode: 'exploit',
+    });
+    check('L5: country=3/kz_ca=3/era=3 alone → hard card still blocked', result === null);
+  }
 }
 
 // ── K: MAX_WEIGHT = 3 clamping ────────────────────────────────────────────────
