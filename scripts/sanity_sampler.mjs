@@ -20,19 +20,23 @@ const CALIB_SIZE          = 30;
 const CALIB_EASY          = 18;
 const CALIB_MEDIUM        = 12;
 const CALIB_HARD          = 0;
-const CALIB_KZ_EASY       = 9;
-const CALIB_KZ_MEDIUM     = 6;
+const CALIB_KZ_EASY       = 10;
+const CALIB_KZ_MEDIUM     = 7;
 const CALIB_KZ_HARD       = 0;
 const CALIB_DOMAIN_MAX    = 5;
 const CALIB_SUBDOMAIN_MAX = 3;
 const CALIB_ERA_MAX       = 8;
 const CALIB_REGION_MAX    = 8;
-const CALIB_KZ_CA_TARGET  = 15;
-const CALIB_KZ_CA_MAX     = 15;
+const CALIB_KZ_CA_TARGET  = 12;
+const CALIB_KZ_CA_MAX     = 12;
 const CALIB_EASY_RANK_MAX   = 1500;
 const CALIB_MEDIUM_RANK_MAX = 6000;
 const CALIB_HARD_RANK_MAX   = 13000;
 const KZ_CA_REMAINING     = 24;
+
+const COVERAGE_PROBES = [
+  { subdomain: 'football', difficulties: ['easy', 'medium'], maxRank: CALIB_MEDIUM_RANK_MAX },
+];
 
 const ADAPTIVE_TAIL_SIZE      = 70;
 const ADAPTIVE_DOMAIN_MAX     = 30;
@@ -142,6 +146,20 @@ function createCalibrationBlock(safe, kzCaIds, region, usedIds) {
     relaxLog[logKey] += block.length - before;
   }
 
+  // Probe Phase 0: guarantee coverage for configured subdomains before regional seeds
+  for (const probe of COVERAGE_PROBES) {
+    if (block.length >= CALIB_SIZE) break;
+    if ((subdomainCount[probe.subdomain] ?? 0) > 0) continue;
+    for (const p of shuffled) {
+      if (p.subdomain !== probe.subdomain) continue;
+      if (!probe.difficulties.includes(p.difficulty_bucket ?? '')) continue;
+      if (p.global_rank > probe.maxRank) continue;
+      if (isConstrained(p)) continue;
+      addCard(p);
+      break;
+    }
+  }
+
   // Phase 1 (kz): seed with kz_ca
   if (region === 'kz') {
     for (const p of shuffled) {
@@ -150,7 +168,7 @@ function createCalibrationBlock(safe, kzCaIds, region, usedIds) {
     }
   }
 
-  // Phase 2: fill by difficulty targets; snapshot after Phase 1 so kz_ca contributions don't inflate counts
+  // Phase 2: fill by difficulty targets; snapshot after Phase 1 so probe + kz_ca contributions don't inflate counts
   const phase1Snap = region === 'kz' ? { ...diffCount } : {};
   const p2Count = diff => (diffCount[diff] ?? 0) - (phase1Snap[diff] ?? 0);
 
@@ -424,6 +442,7 @@ function runSuite(label, region) {
   let diffStats = { easy: 0, medium: 0, hard: 0 };
   let diffStatsKzPhase2 = { easy: 0, medium: 0, hard: 0 };
   let sampleFirst30 = null;
+  let footballFirst30Count = 0;
   const totalRelax = { relaxedEra: 0, relaxedSub: 0, relaxedDomain: 0, relaxedDifficulty: 0 };
 
   for (let i = 0; i < SUITE_RUNS; i++) {
@@ -468,6 +487,7 @@ function runSuite(label, region) {
       }
     }
 
+    if (first.some(p => p.subdomain === 'football')) footballFirst30Count++;
     if (i === 0) sampleFirst30 = first;
   }
 
@@ -489,12 +509,18 @@ function runSuite(label, region) {
 
   if (region !== 'kz') {
     check(`first 30 macro_region max ≤ ${CALIB_REGION_MAX}`, !regionViolation);
+    check(`football in global first30 ≥ 99% (${footballFirst30Count}/${SUITE_RUNS})`,
+      footballFirst30Count >= Math.floor(SUITE_RUNS * 0.99),
+      `got ${footballFirst30Count}/${SUITE_RUNS}`);
     console.log(`  INFO  avg first-30 difficulty: easy=${diffStats.easy.toFixed(1)} medium=${diffStats.medium.toFixed(1)} hard=${diffStats.hard.toFixed(1)}`);
   } else {
-    check(`kz_ca in first 30 always ≥ 14 (min=${minKzCa30} max=${maxKzCa30})`,
-      minKzCa30 >= 14, `min=${minKzCa30} max=${maxKzCa30}`);
+    check(`kz_ca in first 30 always ≥ 12 (min=${minKzCa30} max=${maxKzCa30})`,
+      minKzCa30 >= 12, `min=${minKzCa30} max=${maxKzCa30}`);
     check(`kz_ca total in deck always ≥ 20 (min=${minKzCaTotal})`,
       minKzCaTotal >= 20, `min=${minKzCaTotal}`);
+    check(`football in kz first30 ≥ 90% (${footballFirst30Count}/${SUITE_RUNS})`,
+      footballFirst30Count >= Math.floor(SUITE_RUNS * 0.90),
+      `got ${footballFirst30Count}/${SUITE_RUNS}`);
     console.log(`  INFO  kz first-30: avg kz_ca=${((minKzCa30+maxKzCa30)/2).toFixed(1)} (min=${minKzCa30} max=${maxKzCa30})`);
     console.log(`  INFO  kz Phase 2 (non-kz_ca) avg: easy=${diffStatsKzPhase2.easy.toFixed(1)} medium=${diffStatsKzPhase2.medium.toFixed(1)} hard=${diffStatsKzPhase2.hard.toFixed(1)}`);
   }

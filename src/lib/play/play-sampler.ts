@@ -83,10 +83,10 @@ const CALIB_EASY          = 18;
 const CALIB_MEDIUM        = 12;
 const CALIB_HARD          = 0;
 
-// kz mode Phase 2 (15 remaining slots after 15 kz_ca_top in Phase 1)
-// Proportional to default 18/12/0: ×0.5 → 9/6/0
-const CALIB_KZ_EASY       = 9;
-const CALIB_KZ_MEDIUM     = 6;
+// kz mode Phase 2 (17 remaining slots: 30 − 12 seeds − 1 probe)
+// Proportional to default 18/12/0 scaled to 17 slots → 10/7/0
+const CALIB_KZ_EASY       = 10;
+const CALIB_KZ_MEDIUM     = 7;
 const CALIB_KZ_HARD       = 0;
 
 // Rank caps for calibration sampling — narrower than full bucket ranges so that
@@ -98,8 +98,24 @@ const CALIB_DOMAIN_MAX    = 5;
 const CALIB_SUBDOMAIN_MAX = 3;
 const CALIB_ERA_MAX       = 8;
 const CALIB_REGION_MAX    = 8;  // default mode only
-const CALIB_KZ_CA_TARGET  = 15; // seed count for kz Phase 1
-const CALIB_KZ_CA_MAX     = 15; // hard cap for kz_ca in calibration block
+const CALIB_KZ_CA_TARGET  = 12; // seed count for kz Phase 1
+const CALIB_KZ_CA_MAX     = 12; // hard cap for kz_ca in calibration block
+
+// ── Coverage probe config ─────────────────────────────────────────────────────
+
+interface CoverageProbe {
+  subdomain:    string;
+  difficulties: string[];
+  maxRank:      number;
+}
+
+// Category-level probes: guarantee at least one card of the specified subdomain
+// in the calibration block when eligible candidates exist.
+// Probe runs before Phase 1 so it claims domain slots before regional seeds.
+// Add entries here to probe additional categories in future stages.
+const COVERAGE_PROBES: CoverageProbe[] = [
+  { subdomain: 'football', difficulties: ['easy', 'medium'], maxRank: CALIB_MEDIUM_RANK_MAX },
+];
 
 // ── Sensitive filter ──────────────────────────────────────────────────────────
 
@@ -208,7 +224,25 @@ function createCalibrationBlock(
     relaxLog[logKey] += block.length - before;
   }
 
-  // Phase 1 (kz only): seed with CALIB_KZ_CA_TARGET kz_ca cards
+  // Probe Phase 0: guarantee at least one card per configured subdomain.
+  // Runs before Phase 1 so probe cards claim domain slots before regional seeds.
+  // Selects randomly from shuffled (Fisher-Yates) filtered to top-popularity range.
+  for (const probe of COVERAGE_PROBES) {
+    if (block.length >= CALIB_SIZE) break;
+    if ((subdomainCount[probe.subdomain] ?? 0) > 0) continue;
+    for (const p of shuffled) {
+      if (p.subdomain !== probe.subdomain) continue;
+      if (!probe.difficulties.includes(p.difficulty_bucket ?? '')) continue;
+      if (p.global_rank > probe.maxRank) continue;
+      if (isConstrained(p)) continue;
+      addCard(p);
+      break;
+    }
+  }
+
+  // Phase 1 (kz only): seed with CALIB_KZ_CA_TARGET kz_ca cards.
+  // Probe Phase 0 has already claimed one slot (e.g. one sports slot for football),
+  // so kz seeds see the sports domain partially occupied.
   if (region === 'kz') {
     for (const p of shuffled) {
       if (kzCaCount >= CALIB_KZ_CA_TARGET) break;
@@ -217,8 +251,8 @@ function createCalibrationBlock(
   }
 
   // Phase 2: fill difficulty targets; prefer non-unknown era; cap rank per tier.
-  // kz uses proportionally scaled targets (15 slots remain after Phase 1).
-  // Snapshot diffCount after Phase 1 so kz_ca_top contributions don't inflate counts.
+  // kz uses proportionally scaled targets (17 slots: 30 − 12 seeds − 1 probe).
+  // Snapshot diffCount after Phase 1 so probe + kz_ca_top contributions don't inflate counts.
   const phase1Snap: Record<string, number> = region === 'kz' ? { ...diffCount } : {};
   const p2Count = (diff: string) => (diffCount[diff] ?? 0) - (phase1Snap[diff] ?? 0);
 

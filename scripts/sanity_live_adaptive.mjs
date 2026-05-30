@@ -19,15 +19,15 @@ const CALIB_SIZE              = 30;
 const CALIB_EASY              = 18;
 const CALIB_MEDIUM            = 12;
 const CALIB_HARD              = 0;
-const CALIB_KZ_EASY           = 9;
-const CALIB_KZ_MEDIUM         = 6;
+const CALIB_KZ_EASY           = 10;
+const CALIB_KZ_MEDIUM         = 7;
 const CALIB_KZ_HARD           = 0;
 const CALIB_DOMAIN_MAX        = 5;
 const CALIB_SUBDOMAIN_MAX     = 3;
 const CALIB_ERA_MAX           = 8;
 const CALIB_REGION_MAX        = 8;
-const CALIB_KZ_CA_TARGET      = 15;
-const CALIB_KZ_CA_MAX         = 15;
+const CALIB_KZ_CA_TARGET      = 12;
+const CALIB_KZ_CA_MAX         = 12;
 const CALIB_EASY_RANK_MAX     = 1500;
 const CALIB_MEDIUM_RANK_MAX   = 6000;
 const CALIB_HARD_RANK_MAX     = 13000;
@@ -115,6 +115,20 @@ function createCalibrationBlock(safe, kzCaIds, region, usedIds) {
     }
   }
 
+  // Probe Phase 0: guarantee coverage for configured subdomains before regional seeds
+  for (const probe of COVERAGE_PROBES) {
+    if (block.length >= CALIB_SIZE) break;
+    if ((subdomainCount[probe.subdomain] ?? 0) > 0) continue;
+    for (const p of shuffled) {
+      if (p.subdomain !== probe.subdomain) continue;
+      if (!probe.difficulties.includes(p.difficulty_bucket ?? '')) continue;
+      if (p.global_rank > probe.maxRank) continue;
+      if (isConstrained(p)) continue;
+      addCard(p);
+      break;
+    }
+  }
+
   if (region === 'kz') {
     for (const p of shuffled) {
       if (kzCaCount >= CALIB_KZ_CA_TARGET) break;
@@ -156,6 +170,10 @@ const ERA_ORDER = [
 ];
 const MIN_WEIGHT = 0.1, MAX_WEIGHT = 3.0;
 const HARD_UNLOCK_THRESHOLD = 2.0;
+
+const COVERAGE_PROBES = [
+  { subdomain: 'football', difficulties: ['easy', 'medium'], maxRank: CALIB_MEDIUM_RANK_MAX },
+];
 const clamp = v => Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, v));
 function soften(base, s) { return 1 + (base - 1) * s; }
 function getDiffMult(bucket, answer) {
