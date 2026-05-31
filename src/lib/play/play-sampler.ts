@@ -1,6 +1,6 @@
 import type { Person, PlayPools } from './types';
 import { SENSITIVE_OCCUPATIONS } from './localized-labels';
-import { getCardFitScore, getThematicConfidence, HARD_UNLOCK_THRESHOLD } from './adaptive-profile';
+import { getCardFitScore, getThematicConfidence, HARD_UNLOCK_THRESHOLD, MEDIUM_UNLOCK_THRESHOLD } from './adaptive-profile';
 import type { AdaptiveProfile } from './adaptive-profile';
 
 export const SESSION_CARD_COUNT = 100;
@@ -587,6 +587,7 @@ function buildEligiblePool(
   relaxStreak:      { country?: boolean; subdomain?: boolean; domain?: boolean },
   relaxCaps:        { country?: boolean; subdomain?: boolean; domain?: boolean },
   profile:          AdaptiveProfile,
+  relaxMedium:      boolean,
 ): Person[] {
   return candidates.filter(p => {
     if (usedIds.has(p.wikidata_id))                                                   return false;
@@ -606,8 +607,13 @@ function buildEligiblePool(
     if (!relaxStreak.subdomain && blockedSubdomain && sub === blockedSubdomain) return false;
     if (!relaxStreak.domain    && blockedDomain    && d   === blockedDomain)    return false;
 
+    // Hard gate — permanent, never relaxed; isRegionalSeed bypasses
     if (p.difficulty_bucket === 'hard' && !p.isRegionalSeed &&
         getThematicConfidence(p, profile) < HARD_UNLOCK_THRESHOLD) return false;
+
+    // Medium gate — easy-first, medium allowed as fallback via relaxMedium
+    if (!relaxMedium && p.difficulty_bucket === 'medium' &&
+        getThematicConfidence(p, profile) < MEDIUM_UNLOCK_THRESHOLD) return false;
 
     return true;
   });
@@ -657,27 +663,30 @@ export function pickNextAdaptiveCard({
   const blockedDomain    = domRun && domRun.length >= ANTISTREAK_DOMAIN_MAX    ? domRun.tag : null;
 
   // Relax order: streak country → streak subdomain → streak domain →
-  //              cap country → cap subdomain → cap domain
-  // Never relax: usedIds, adult_excluded, soft-sensitive max.
+  //              medium fallback (low-confidence) → cap country → cap subdomain → cap domain
+  // Never relax: usedIds, adult_excluded, soft-sensitive max, hard gate.
   const relaxLevels: Array<{
-    relaxStreak: { country?: boolean; subdomain?: boolean; domain?: boolean };
-    relaxCaps:   { country?: boolean; subdomain?: boolean; domain?: boolean };
+    relaxStreak:  { country?: boolean; subdomain?: boolean; domain?: boolean };
+    relaxCaps:    { country?: boolean; subdomain?: boolean; domain?: boolean };
+    relaxMedium:  boolean;
   }> = [
-    { relaxStreak: {},                                                    relaxCaps: {} },
-    { relaxStreak: { country: true },                                     relaxCaps: {} },
-    { relaxStreak: { country: true, subdomain: true },                    relaxCaps: {} },
-    { relaxStreak: { country: true, subdomain: true, domain: true },      relaxCaps: {} },
-    { relaxStreak: { country: true, subdomain: true, domain: true },  relaxCaps: { country: true } },
-    { relaxStreak: { country: true, subdomain: true, domain: true },  relaxCaps: { country: true, subdomain: true } },
-    { relaxStreak: { country: true, subdomain: true, domain: true },  relaxCaps: { country: true, subdomain: true, domain: true } },
+    { relaxStreak: {},                                                   relaxCaps: {},                                                relaxMedium: false },
+    { relaxStreak: { country: true },                                    relaxCaps: {},                                                relaxMedium: false },
+    { relaxStreak: { country: true, subdomain: true },                   relaxCaps: {},                                                relaxMedium: false },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: {},                                                relaxMedium: false },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: {},                                                relaxMedium: true  },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: { country: true },                                 relaxMedium: true  },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: { country: true, subdomain: true },                relaxMedium: true  },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: { country: true, subdomain: true, domain: true },  relaxMedium: true  },
   ];
 
-  for (const { relaxStreak, relaxCaps } of relaxLevels) {
+  for (const { relaxStreak, relaxCaps, relaxMedium } of relaxLevels) {
     const eligible = buildEligiblePool(
       candidates, usedIds, counts,
       blockedCountry, blockedSubdomain, blockedDomain,
       relaxStreak, relaxCaps,
       profile,
+      relaxMedium,
     );
     if (eligible.length === 0) continue;
 

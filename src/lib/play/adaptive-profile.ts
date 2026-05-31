@@ -279,7 +279,8 @@ export function getCardFitScore(
 
 // ── Hard gate helper ──────────────────────────────────────────────────────────
 
-export const HARD_UNLOCK_THRESHOLD = 2.0;
+export const HARD_UNLOCK_THRESHOLD   = 2.0;
+export const MEDIUM_UNLOCK_THRESHOLD = 1.1;
 
 export function getThematicConfidence(
   person: Pick<Person, 'occupation' | 'subdomain' | 'domain'>,

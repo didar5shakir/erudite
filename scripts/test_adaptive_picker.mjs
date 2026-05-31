@@ -61,7 +61,8 @@ const ERA_ORDER = [
   'industrial_modern','postwar_births','late_20c_births','modern_media_births','digital_births',
 ];
 const MIN_WEIGHT = 0.1, MAX_WEIGHT = 3.0;
-const HARD_UNLOCK_THRESHOLD = 2.0;
+const HARD_UNLOCK_THRESHOLD   = 2.0;
+const MEDIUM_UNLOCK_THRESHOLD = 1.1;
 const clamp = v => Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, v));
 
 function soften(base, strength) { return 1 + (base - 1) * strength; }
@@ -170,7 +171,7 @@ function isSoftSensitiveCard(p) {
 
 function buildEligiblePool(candidates, usedIds, counts,
   blockedCountry, blockedSubdomain, blockedDomain,
-  relaxStreak, relaxCaps, profile) {
+  relaxStreak, relaxCaps, profile, relaxMedium) {
   return candidates.filter(p => {
     if (usedIds.has(p.wikidata_id))                                        return false;
     if (p.content_sensitivity === 'adult_excluded')                        return false;
@@ -191,6 +192,9 @@ function buildEligiblePool(candidates, usedIds, counts,
 
     if (p.difficulty_bucket === 'hard' && !p.isRegionalSeed &&
         getThematicConfidence(p, profile) < HARD_UNLOCK_THRESHOLD) return false;
+
+    if (!relaxMedium && p.difficulty_bucket === 'medium' &&
+        getThematicConfidence(p, profile) < MEDIUM_UNLOCK_THRESHOLD) return false;
 
     return true;
   });
@@ -217,19 +221,20 @@ function pickNextAdaptiveCard({ candidates, profile, usedIds, counts, recentCard
   const blockedDomain    = domRun && domRun.length >= ANTISTREAK_DOMAIN_MAX    ? domRun.tag : null;
 
   const relaxLevels = [
-    { relaxStreak: {},                                                   relaxCaps: {} },
-    { relaxStreak: { country: true },                                    relaxCaps: {} },
-    { relaxStreak: { country: true, subdomain: true },                   relaxCaps: {} },
-    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: {} },
-    { relaxStreak: { country: true, subdomain: true, domain: true }, relaxCaps: { country: true } },
-    { relaxStreak: { country: true, subdomain: true, domain: true }, relaxCaps: { country: true, subdomain: true } },
-    { relaxStreak: { country: true, subdomain: true, domain: true }, relaxCaps: { country: true, subdomain: true, domain: true } },
+    { relaxStreak: {},                                                   relaxCaps: {},                                               relaxMedium: false },
+    { relaxStreak: { country: true },                                    relaxCaps: {},                                               relaxMedium: false },
+    { relaxStreak: { country: true, subdomain: true },                   relaxCaps: {},                                               relaxMedium: false },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: {},                                               relaxMedium: false },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: {},                                               relaxMedium: true  },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: { country: true },                                relaxMedium: true  },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: { country: true, subdomain: true },               relaxMedium: true  },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: { country: true, subdomain: true, domain: true }, relaxMedium: true  },
   ];
 
-  for (const { relaxStreak, relaxCaps } of relaxLevels) {
+  for (const { relaxStreak, relaxCaps, relaxMedium } of relaxLevels) {
     const eligible = buildEligiblePool(
       candidates, usedIds, counts, blockedCountry, blockedSubdomain, blockedDomain,
-      relaxStreak, relaxCaps, profile,
+      relaxStreak, relaxCaps, profile, relaxMedium,
     );
     if (eligible.length === 0) continue;
     if (mode === 'explore') return eligible[Math.floor(rng() * eligible.length)];
@@ -297,7 +302,7 @@ console.log('\n── A: Anti-streak — no greedy block ──');
     makePerson({ country_tag: 'India', subdomain: 'philosophy', domain: 'religion' }),
   );
   const otherCards = Array.from({ length: 20 }, () =>
-    makePerson({ country_tag: 'Brazil', subdomain: 'football', domain: 'sports' }),
+    makePerson({ country_tag: 'Brazil', subdomain: 'football', domain: 'sports', difficulty_bucket: 'easy' }),
   );
   const candidates = [...indiaCards, ...otherCards];
 
@@ -600,9 +605,10 @@ console.log('\n── H: Explore mode — uniform random ──');
   // so domain anti-streak never forces a relax that bypasses country anti-streak
   const cards = Array.from({ length: 30 }, (_, i) =>
     makePerson({
-      country_tag: i < 15 ? 'France'         : 'Germany',
-      domain:      i < 15 ? 'entertainment'  : 'science',
-      subdomain:   i < 15 ? 'cinema'         : 'physics',
+      country_tag:       i < 15 ? 'France'        : 'Germany',
+      domain:            i < 15 ? 'entertainment' : 'science',
+      subdomain:         i < 15 ? 'cinema'        : 'physics',
+      difficulty_bucket: 'easy',
     }),
   );
   const profile = emptyProfile();
@@ -774,6 +780,94 @@ console.log('\n── L: Hard gate by thematic confidence ──');
       counts: emptyCounts(), recentCards: [], rng: makeLCG(106), mode: 'exploit',
     });
     check('L5: country=3/kz_ca=3/era=3 alone → hard card still blocked', result === null);
+  }
+}
+
+// ── M: Medium gate by thematic confidence ────────────────────────────────────
+console.log('\n── M: Medium gate by thematic confidence ──');
+{
+  // M1: low-confidence medium blocked when easy alternative exists
+  {
+    const easyCard   = makePerson({ difficulty_bucket: 'easy',   occupation: 'POLITICIAN', domain: 'politics', country_tag: 'France',   macro_region: 'western_europe', era_bucket: 'industrial_modern' });
+    const mediumCard = makePerson({ difficulty_bucket: 'medium', occupation: 'POLITICIAN', domain: 'politics', country_tag: 'Germany',  macro_region: 'western_europe', era_bucket: 'industrial_modern' });
+    const profile = emptyProfile(); // TC = 1.0 < 1.1
+    let mediumPicked = 0;
+    for (let i = 0; i < 20; i++) {
+      const result = pickNextAdaptiveCard({
+        candidates: [easyCard, mediumCard], profile,
+        usedIds: new Set(), counts: emptyCounts(), recentCards: [], rng: Math.random, mode: 'exploit',
+      });
+      if (result?.wikidata_id === mediumCard.wikidata_id) mediumPicked++;
+    }
+    check('M1: low-confidence medium blocked when easy exists', mediumPicked === 0,
+      `medium picked ${mediumPicked}/20 times`);
+  }
+
+  // M2: low-confidence easy card is allowed
+  {
+    const easyCard = makePerson({ difficulty_bucket: 'easy', occupation: 'POLITICIAN', domain: 'politics', country_tag: 'France', macro_region: 'western_europe', era_bucket: 'industrial_modern' });
+    const profile = emptyProfile();
+    const result = pickNextAdaptiveCard({
+      candidates: [easyCard], profile,
+      usedIds: new Set(), counts: emptyCounts(), recentCards: [], rng: Math.random, mode: 'exploit',
+    });
+    check('M2: low-confidence easy card allowed', result !== null && result.wikidata_id === easyCard.wikidata_id);
+  }
+
+  // M3: low-confidence medium allowed as fallback when no easy cards exist
+  {
+    const mediumCard = makePerson({ difficulty_bucket: 'medium', occupation: 'POLITICIAN', domain: 'politics', country_tag: 'France', macro_region: 'western_europe', era_bucket: 'industrial_modern' });
+    const profile = emptyProfile(); // TC = 1.0 < 1.1
+    const result = pickNextAdaptiveCard({
+      candidates: [mediumCard], profile,
+      usedIds: new Set(), counts: emptyCounts(), recentCards: [], rng: Math.random, mode: 'exploit',
+    });
+    check('M3: low-confidence medium as fallback (no easy available)', result !== null && result.wikidata_id === mediumCard.wikidata_id);
+  }
+
+  // M4: TC >= 1.1 unlocks medium directly
+  {
+    const mediumCard = makePerson({ difficulty_bucket: 'medium', occupation: 'POLITICIAN', domain: 'politics', country_tag: 'France', macro_region: 'western_europe', era_bucket: 'industrial_modern' });
+    const profile = emptyProfile();
+    profile.weights.occupation['POLITICIAN'] = 1.2; // TC = 1.2 >= 1.1
+    const result = pickNextAdaptiveCard({
+      candidates: [mediumCard], profile,
+      usedIds: new Set(), counts: emptyCounts(), recentCards: [], rng: Math.random, mode: 'exploit',
+    });
+    check('M4: TC=1.2 ≥ 1.1 → medium unlocked', result !== null && result.wikidata_id === mediumCard.wikidata_id);
+  }
+
+  // M5: TC in [1.1, 2.0) allows medium but still blocks hard
+  {
+    const hardCard = makePerson({ difficulty_bucket: 'hard', occupation: 'POLITICIAN', domain: 'politics', country_tag: 'France', macro_region: 'western_europe', era_bucket: 'industrial_modern' });
+    const profile = emptyProfile();
+    profile.weights.occupation['POLITICIAN'] = 1.5; // TC = 1.5: medium unlocked, hard still blocked
+    const result = pickNextAdaptiveCard({
+      candidates: [hardCard], profile,
+      usedIds: new Set(), counts: emptyCounts(), recentCards: [], rng: Math.random, mode: 'exploit',
+    });
+    check('M5: TC=1.5 in [1.1, 2.0) → hard still blocked', result === null);
+  }
+
+  // M6: country/macroRegion/era alone do not unlock medium (TC uses only occupation/subdomain/domain)
+  {
+    const easyCard   = makePerson({ difficulty_bucket: 'easy',   occupation: 'POLITICIAN', domain: 'politics', country_tag: 'France',     macro_region: 'western_europe', era_bucket: 'early_modern' });
+    const mediumCard = makePerson({ difficulty_bucket: 'medium', occupation: 'POLITICIAN', domain: 'politics', country_tag: 'Kazakhstan', macro_region: 'kz_ca',         era_bucket: 'early_modern' });
+    const profile = emptyProfile();
+    profile.weights.country['Kazakhstan']    = 3.0;
+    profile.weights.macroRegion['kz_ca']     = 3.0;
+    profile.weights.era['early_modern']      = 3.0;
+    // occupation.POLITICIAN and domain.politics remain at default 1.0 → TC = 1.0 < 1.1
+    let mediumPicked = 0;
+    for (let i = 0; i < 20; i++) {
+      const result = pickNextAdaptiveCard({
+        candidates: [easyCard, mediumCard], profile,
+        usedIds: new Set(), counts: emptyCounts(), recentCards: [], rng: Math.random, mode: 'exploit',
+      });
+      if (result?.wikidata_id === mediumCard.wikidata_id) mediumPicked++;
+    }
+    check('M6: country/macroRegion/era=3 alone → medium still blocked (TC=1.0)',
+      mediumPicked === 0, `medium picked ${mediumPicked}/20 times`);
   }
 }
 

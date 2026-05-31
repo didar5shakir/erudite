@@ -169,7 +169,8 @@ const ERA_ORDER = [
   'industrial_modern','postwar_births','late_20c_births','modern_media_births','digital_births',
 ];
 const MIN_WEIGHT = 0.1, MAX_WEIGHT = 3.0;
-const HARD_UNLOCK_THRESHOLD = 2.0;
+const HARD_UNLOCK_THRESHOLD   = 2.0;
+const MEDIUM_UNLOCK_THRESHOLD = 1.1;
 
 const COVERAGE_PROBES = [
   { subdomain: 'football', difficulties: ['easy', 'medium'], maxRank: CALIB_MEDIUM_RANK_MAX },
@@ -284,7 +285,7 @@ function runLengthAtEnd(cards, getTag) {
 }
 
 function buildEligiblePool(candidates, usedIds, counts,
-  blockedCountry, blockedSubdomain, blockedDomain, relaxStreak, relaxCaps, profile) {
+  blockedCountry, blockedSubdomain, blockedDomain, relaxStreak, relaxCaps, profile, relaxMedium) {
   return candidates.filter(p => {
     if (usedIds.has(p.wikidata_id)) return false;
     if (p.content_sensitivity === 'adult_excluded') return false;
@@ -301,6 +302,8 @@ function buildEligiblePool(candidates, usedIds, counts,
     if (!relaxStreak.domain    && blockedDomain    && d   === blockedDomain)    return false;
     if (p.difficulty_bucket === 'hard' && !p.isRegionalSeed &&
         getThematicConfidence(p, profile) < HARD_UNLOCK_THRESHOLD) return false;
+    if (!relaxMedium && p.difficulty_bucket === 'medium' &&
+        getThematicConfidence(p, profile) < MEDIUM_UNLOCK_THRESHOLD) return false;
     return true;
   });
 }
@@ -325,17 +328,18 @@ function pickNextAdaptiveCard({ candidates, profile, usedIds, counts, recentCard
   const blockedDomain    = domRun && domRun.length >= ANTISTREAK_DOMAIN_MAX    ? domRun.tag : null;
 
   const relaxLevels = [
-    { relaxStreak: {},                                                   relaxCaps: {} },
-    { relaxStreak: { country: true },                                    relaxCaps: {} },
-    { relaxStreak: { country: true, subdomain: true },                   relaxCaps: {} },
-    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: {} },
-    { relaxStreak: { country: true, subdomain: true, domain: true }, relaxCaps: { country: true } },
-    { relaxStreak: { country: true, subdomain: true, domain: true }, relaxCaps: { country: true, subdomain: true } },
-    { relaxStreak: { country: true, subdomain: true, domain: true }, relaxCaps: { country: true, subdomain: true, domain: true } },
+    { relaxStreak: {},                                                   relaxCaps: {},                                               relaxMedium: false },
+    { relaxStreak: { country: true },                                    relaxCaps: {},                                               relaxMedium: false },
+    { relaxStreak: { country: true, subdomain: true },                   relaxCaps: {},                                               relaxMedium: false },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: {},                                               relaxMedium: false },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: {},                                               relaxMedium: true  },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: { country: true },                                relaxMedium: true  },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: { country: true, subdomain: true },               relaxMedium: true  },
+    { relaxStreak: { country: true, subdomain: true, domain: true },     relaxCaps: { country: true, subdomain: true, domain: true }, relaxMedium: true  },
   ];
-  for (const { relaxStreak, relaxCaps } of relaxLevels) {
+  for (const { relaxStreak, relaxCaps, relaxMedium } of relaxLevels) {
     const eligible = buildEligiblePool(candidates, usedIds, counts,
-      blockedCountry, blockedSubdomain, blockedDomain, relaxStreak, relaxCaps, profile);
+      blockedCountry, blockedSubdomain, blockedDomain, relaxStreak, relaxCaps, profile, relaxMedium);
     if (eligible.length === 0) continue;
     if (mode === 'explore') return eligible[Math.floor(rng() * eligible.length)];
     const scored = eligible
