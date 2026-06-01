@@ -35,6 +35,10 @@ from _derived_tags import (
 ROOT         = Path(__file__).resolve().parents[2]
 IN_PATH      = ROOT / "data" / "processed" / "figures_top_final.csv"
 SEED_PATH    = ROOT / "data" / "processed" / "kz_ca_seed_pool_preview.csv"
+# Off-Pantheon KZ/CA seed additions (null-rank figures not in figures_top_final.csv).
+# Pre-built records in final kz_ca_top schema, with EXPLICIT difficulty_bucket
+# (NOT computed from global_rank). Validated via scripts/validate_kz_merge.mjs.
+EXTRA_SEED_PATH = ROOT / "data" / "processed" / "kz_ca_extra_seed.json"
 DISPLAY_PATH = ROOT / "data" / "processed" / "figures_display_names.csv"
 MANUAL_PATH  = ROOT / "data" / "manual_display_names.json"
 OUT_DIR      = ROOT / "public" / "data"
@@ -201,6 +205,23 @@ kz_ca_df = kz_ca_df.sort_values("kz_rank", na_position="last")
 
 print(f"  kz_ca_top : {len(kz_ca_df):>6,}  (seed={len(seed_ids)}, matched={len(kz_ca_df)})")
 
+# ── kz_ca_top supplement: off-Pantheon validated additions ────────────────────
+# These are not in figures_top_final.csv (null global_rank), so they cannot be
+# enriched via the isin(seed_ids) join above. They arrive as final-schema records
+# with explicit difficulty_bucket. Appended directly, deduped by wikidata_id.
+kz_ca_records = to_records(kz_ca_df, display_map)
+_existing_qids = {r["wikidata_id"] for r in kz_ca_records}
+extra_added = 0
+if EXTRA_SEED_PATH.exists():
+    extra_records = json.loads(EXTRA_SEED_PATH.read_text(encoding="utf-8"))
+    for rec in extra_records:
+        if rec["wikidata_id"] not in _existing_qids:
+            kz_ca_records.append(rec)
+            _existing_qids.add(rec["wikidata_id"])
+            extra_added += 1
+    print(f"  kz_ca_top supplement: +{extra_added} off-Pantheon additions "
+          f"(total kz_ca_top = {len(kz_ca_records)})")
+
 # ── Сборка и запись ───────────────────────────────────────────────────────────
 
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -210,7 +231,7 @@ payload = {
     "ru_quota":  to_records(ru_quota,  display_map),
     "kz_quota":  to_records(kz_quota,  display_map),
     "hpi_quota": to_records(hpi_quota, display_map),
-    "kz_ca_top": to_records(kz_ca_df,  display_map),
+    "kz_ca_top": kz_ca_records,
 }
 
 json_str = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
