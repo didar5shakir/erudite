@@ -1,10 +1,10 @@
-import type { Person, Answer } from './types';
-import type { AdaptiveProfile } from './adaptive-profile';
+import type { AdaptiveProfile, AnswerRecord } from './adaptive-profile';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type ZoneAxis = 'subdomain' | 'domain' | 'country' | 'macroRegion' | 'era';
-export type LevelLabel = 'beginner' | 'casual' | 'engaged' | 'erudite' | 'master';
+export type ZoneCategory = 'topic' | 'geo' | 'time';
+export type LevelLabel = 'beginner' | 'casual' | 'good' | 'strong' | 'erudite' | 'master';
 
 export interface ZoneStats {
   axis:     ZoneAxis;
@@ -28,8 +28,9 @@ export interface ResultEstimate {
   scoreSum:            number;
   scorePercent:        number;
 
-  calibrationEstimate: number;
-  publicEstimate:      number;
+  universeTotal:       number;   // public denominator (30 000)
+  calibrationEstimate: number;   // raw 30k-base extrapolation (rounded)
+  publicEstimate:      number;   // clamped to [0, universeTotal]
 
   rangeLow:            number;
   rangeHigh:           number;
@@ -45,6 +46,7 @@ export interface ResultEstimate {
   usedDefaultBuckets:  string[];
 
   strongZones:         ZoneStats[];
+  mediumZones:         ZoneStats[];
   weakZones:           ZoneStats[];
 
   isPreliminary:       boolean;
@@ -52,10 +54,14 @@ export interface ResultEstimate {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-export const BASE_BUCKET_TOTALS: Record<string, number> = {
+// Public universe = 30 000. Bucket universes sum to exactly 30 000, so with each
+// bucket rate in [0,1] the extrapolated estimate can never exceed 30 000 by
+// construction. The clamps below are a defensive guarantee.
+export const UNIVERSE_TOTAL = 30000;
+export const BUCKET_UNIVERSE: Record<string, number> = {
   easy:   1500,
-  medium: 8500,
-  hard:   20000,
+  medium: 4500,
+  hard:   24000,
 };
 
 export const DEFAULT_BUCKET_RATES: Record<string, number> = {
@@ -64,24 +70,40 @@ export const DEFAULT_BUCKET_RATES: Record<string, number> = {
   hard:   0.2,
 };
 
-export const BROADER_UNIVERSE_FACTOR = 2;
-
+// MVP level scale. 30 000 is the measurement base, not a realistic human ceiling —
+// most users land ~500–7000, so 6000+ is already very strong and 10000+ exceptional.
+//   beginner 0–499 · casual 500–1499 · good 1500–2999 · strong 3000–5999
+//   erudite 6000–9999 · master/encyclopedic 10000+
 const LEVEL_THRESHOLDS: Array<[number, LevelLabel]> = [
-  [45000, 'master'],
-  [28000, 'erudite'],
-  [15000, 'engaged'],
-  [6000,  'casual'],
+  [10000, 'master'],
+  [6000,  'erudite'],
+  [3000,  'strong'],
+  [1500,  'good'],
+  [500,   'casual'],
 ];
 
 const ZONE_MIN_TOTAL        = 5;
 const ZONE_MAX              = 5;
 const STRONG_RATE_THRESHOLD = 0.7;
 const WEAK_RATE_THRESHOLD   = 0.4;
+const STRONG_MAX_GEO        = 2;   // geography may not dominate the strong list
+
+const ZONE_CATEGORY: Record<ZoneAxis, ZoneCategory> = {
+  subdomain:   'topic',
+  domain:      'topic',
+  country:     'geo',
+  macroRegion: 'geo',
+  era:         'time',
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function roundTo(value: number, nearest: number): number {
   return Math.round(value / nearest) * nearest;
+}
+
+function clamp(value: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, value));
 }
 
 function getRangePercent(totalAnswers: number): number {
@@ -100,37 +122,37 @@ function getLevelLabel(publicEstimate: number): LevelLabel {
 }
 
 // ── Main function ─────────────────────────────────────────────────────────────
+//
+// Cumulative: the estimate and zones are computed from profile.answers[] (all
+// answers across all completed sessions), and counts from profile.stats. This is
+// what makes "continue to 200" genuinely improve the estimate, not just the range.
 
-export function calculateResultEstimate(
-  deck:    Person[],
-  answers: Record<string, Answer>,
-  profile: AdaptiveProfile,
-): ResultEstimate {
-  // ── Session answer counts ──
-  let knowCount = 0, heardCount = 0, dontKnowCount = 0, scoreSum = 0, answeredCount = 0;
+export function calculateResultEstimate(profile: AdaptiveProfile): ResultEstimate {
+  const answers: AnswerRecord[] = profile.answers ?? [];
+
+  // ── Cumulative counts from profile.stats ──
+  const answeredCount = profile.stats.totalAnswers;
+  const knowCount     = profile.stats.knowCount;
+  const heardCount    = profile.stats.heardCount;
+  const dontKnowCount = profile.stats.dontKnowCount;
+  const scoreSum      = profile.stats.scoreSum;
+  const scorePercent  = answeredCount > 0 ? (scoreSum / answeredCount) * 100 : 0;
+
+  // ── Bucket aggregation from cumulative answers ──
+  // Regional-seed cards (kz_ca) are locally-curated / globally-obscure and are NOT
+  // representative of the global 30k universe, so they are excluded from the
+  // bucket-extrapolation estimate. They still count toward zones/profile below.
   const bucketData: Record<string, { sum: number; count: number }> = {};
-
-  for (const person of deck) {
-    const ans = answers[person.wikidata_id];
-    if (!ans) continue;
-    answeredCount++;
-    const score = ans.answer === 'know' ? 1 : ans.answer === 'heard' ? 0.5 : 0;
-    scoreSum += score;
-    if (ans.answer === 'know')       knowCount++;
-    else if (ans.answer === 'heard') heardCount++;
-    else                             dontKnowCount++;
-
-    const b = person.difficulty_bucket ?? 'unknown';
+  for (const a of answers) {
+    if (a.isRegionalSeed === true) continue;
+    const b = a.difficultyBucket ?? 'unknown';
     if (!bucketData[b]) bucketData[b] = { sum: 0, count: 0 };
-    bucketData[b].sum   += score;
+    bucketData[b].sum   += a.score;
     bucketData[b].count += 1;
   }
 
-  const scorePercent = answeredCount > 0 ? (scoreSum / answeredCount) * 100 : 0;
-
-  // ── Calibration estimate via difficulty-bucket extrapolation ──
-  // unknown bucket excluded; missing buckets use DEFAULT_BUCKET_RATES
-  let rawCalib = 0;
+  // ── 30k-base extrapolation; missing buckets use DEFAULT_BUCKET_RATES ──
+  let rawEstimate = 0;
   const usedDefaultBuckets: string[] = [];
   const bucketStats = {} as ResultEstimate['bucketStats'];
 
@@ -141,68 +163,58 @@ export function calculateResultEstimate(
     const count       = usedDefault ? 0 : d.count;
     bucketStats[b]    = { count, scoreRate, usedDefault };
     if (usedDefault) usedDefaultBuckets.push(b);
-    rawCalib += BASE_BUCKET_TOTALS[b] * scoreRate;
+    rawEstimate += BUCKET_UNIVERSE[b] * scoreRate;
   }
-  const calibrationEstimate = roundTo(rawCalib, 100);
-  const publicEstimate = Math.max(
-    0,
-    Math.min(60000, roundTo(calibrationEstimate * BROADER_UNIVERSE_FACTOR, 100)),
-  );
 
-  // ── Range (precision grows with cumulative answered count across sessions) ──
-  const rangePercent = getRangePercent(profile.stats.totalAnswers);
-  const rangeLow     = roundTo(publicEstimate * (1 - rangePercent / 100), 100);
-  const rangeHigh    = roundTo(publicEstimate * (1 + rangePercent / 100), 100);
+  const calibrationEstimate = roundTo(rawEstimate, 100);
+  const publicEstimate = clamp(calibrationEstimate, 0, UNIVERSE_TOTAL);
+
+  // ── Range (precision grows with cumulative answered count); clamped to [0,30k] ──
+  const rangePercent = getRangePercent(answeredCount);
+  const rangeLow     = clamp(roundTo(publicEstimate * (1 - rangePercent / 100), 100), 0, UNIVERSE_TOTAL);
+  const rangeHigh    = clamp(roundTo(publicEstimate * (1 + rangePercent / 100), 100), 0, UNIVERSE_TOTAL);
 
   // ── Level ──
-  const levelLabel  = getLevelLabel(publicEstimate);
-  const isPreliminary = profile.stats.totalAnswers < 100;
+  const levelLabel    = getLevelLabel(publicEstimate);
+  const isPreliminary = answeredCount < 100;
 
-  // ── Zones (based on actual answers, not profile weights) ──
-  const axes: Array<{ axis: ZoneAxis; getTag: (p: Person) => string | null }> = [
-    { axis: 'subdomain',   getTag: p => p.subdomain },
-    { axis: 'domain',      getTag: p => p.domain !== 'unknown' ? p.domain : null },
-    { axis: 'country',     getTag: p => p.country_tag },
-    { axis: 'macroRegion', getTag: p => p.macro_region !== 'unknown' ? p.macro_region : null },
-    { axis: 'era',         getTag: p => p.era_bucket !== 'unknown' ? p.era_bucket : null },
+  // ── Zones (cumulative; from profile.answers) ──
+  const axes: Array<{ axis: ZoneAxis; getTag: (a: AnswerRecord) => string | null }> = [
+    { axis: 'subdomain',   getTag: a => a.subdomain },
+    { axis: 'domain',      getTag: a => (a.domain && a.domain !== 'unknown') ? a.domain : null },
+    { axis: 'country',     getTag: a => a.country },
+    { axis: 'macroRegion', getTag: a => (a.macroRegion && a.macroRegion !== 'unknown') ? a.macroRegion : null },
+    { axis: 'era',         getTag: a => (a.era && a.era !== 'unknown') ? a.era : null },
   ];
 
   const zoneMap = new Map<string, ZoneStats>();
-  for (const person of deck) {
-    const ans = answers[person.wikidata_id];
-    if (!ans) continue;
-    const score = ans.answer === 'know' ? 1 : ans.answer === 'heard' ? 0.5 : 0;
+  const subToDomain:     Record<string, string> = {};
+  const countryToRegion: Record<string, string> = {};
+
+  for (const a of answers) {
+    if (a.subdomain && a.domain && a.domain !== 'unknown') subToDomain[a.subdomain] = a.domain;
+    if (a.country && a.macroRegion && a.macroRegion !== 'unknown') countryToRegion[a.country] = a.macroRegion;
     for (const { axis, getTag } of axes) {
-      const tag = getTag(person);
+      const tag = getTag(a);
       if (!tag) continue;
-      const key      = `${axis}:${tag}`;
+      const key = `${axis}:${tag}`;
       const existing = zoneMap.get(key);
       if (existing) {
         existing.total++;
-        existing.scoreSum += score;
+        existing.scoreSum += a.score;
         existing.rate = existing.scoreSum / existing.total;
       } else {
-        zoneMap.set(key, { axis, tag, total: 1, scoreSum: score, rate: score });
+        zoneMap.set(key, { axis, tag, total: 1, scoreSum: a.score, rate: a.score });
       }
     }
   }
 
-  // Build parent-lookup maps for dedup (subdomain→domain, country→macroRegion)
-  const subToDomain:      Record<string, string> = {};
-  const countryToRegion:  Record<string, string> = {};
-  for (const person of deck) {
-    if (person.subdomain && person.domain !== 'unknown')
-      subToDomain[person.subdomain] = person.domain;
-    if (person.country_tag && person.macro_region !== 'unknown')
-      countryToRegion[person.country_tag] = person.macro_region;
-  }
-
   function dedup(zones: ZoneStats[]): ZoneStats[] {
-    const coveredDomains  = new Set<string>();
-    const coveredRegions  = new Set<string>();
+    const coveredDomains = new Set<string>();
+    const coveredRegions = new Set<string>();
     for (const z of zones) {
-      if (z.axis === 'subdomain') { const d = subToDomain[z.tag];      if (d) coveredDomains.add(d); }
-      if (z.axis === 'country')   { const r = countryToRegion[z.tag];  if (r) coveredRegions.add(r); }
+      if (z.axis === 'subdomain') { const d = subToDomain[z.tag];     if (d) coveredDomains.add(d); }
+      if (z.axis === 'country')   { const r = countryToRegion[z.tag]; if (r) coveredRegions.add(r); }
     }
     return zones.filter(z =>
       !(z.axis === 'domain'      && coveredDomains.has(z.tag)) &&
@@ -211,16 +223,40 @@ export function calculateResultEstimate(
   }
 
   const eligible = [...zoneMap.values()].filter(z => z.total >= ZONE_MIN_TOTAL);
+  const byRate   = (a: ZoneStats, b: ZoneStats) => b.rate - a.rate || b.total - a.total;
 
-  const strongZones = dedup(
-    eligible
-      .filter(z => z.rate >= STRONG_RATE_THRESHOLD)
-      .sort((a, b) => b.rate - a.rate || b.total - a.total),
+  // Strong: balanced so geography cannot crowd out topics.
+  // Guarantee ≥1 topic zone (if any strong topic exists), cap geo at STRONG_MAX_GEO.
+  function selectStrongBalanced(zones: ZoneStats[]): ZoneStats[] {
+    const sorted = [...zones].sort(byRate);
+    const result: ZoneStats[] = [];
+    let geoCount = 0;
+    const pushable = (z: ZoneStats) =>
+      !result.includes(z) &&
+      !(ZONE_CATEGORY[z.axis] === 'geo' && geoCount >= STRONG_MAX_GEO);
+
+    const firstTopic = sorted.find(z => ZONE_CATEGORY[z.axis] === 'topic');
+    if (firstTopic) { result.push(firstTopic); }
+
+    for (const z of sorted) {
+      if (result.length >= ZONE_MAX) break;
+      if (!pushable(z)) continue;
+      result.push(z);
+      if (ZONE_CATEGORY[z.axis] === 'geo') geoCount++;
+    }
+    return result.sort(byRate);
+  }
+
+  const strongZones = selectStrongBalanced(
+    dedup(eligible.filter(z => z.rate >= STRONG_RATE_THRESHOLD)),
+  );
+
+  const mediumZones = dedup(
+    eligible.filter(z => z.rate > WEAK_RATE_THRESHOLD && z.rate < STRONG_RATE_THRESHOLD).sort(byRate),
   ).slice(0, ZONE_MAX);
 
   const weakZones = dedup(
-    eligible
-      .filter(z => z.rate <= WEAK_RATE_THRESHOLD)
+    eligible.filter(z => z.rate <= WEAK_RATE_THRESHOLD)
       .sort((a, b) => a.rate - b.rate || b.total - a.total),
   ).slice(0, ZONE_MAX);
 
@@ -231,6 +267,7 @@ export function calculateResultEstimate(
     dontKnowCount,
     scoreSum,
     scorePercent,
+    universeTotal: UNIVERSE_TOTAL,
     calibrationEstimate,
     publicEstimate,
     rangeLow,
@@ -240,6 +277,7 @@ export function calculateResultEstimate(
     bucketStats,
     usedDefaultBuckets,
     strongZones,
+    mediumZones,
     weakZones,
     isPreliminary,
   };

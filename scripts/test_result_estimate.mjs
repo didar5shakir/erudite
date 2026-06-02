@@ -1,479 +1,263 @@
 /**
- * Deterministic tests for calculateResultEstimate.
- * No sampler, no play_pools.json, no random.
- * Run: node scripts/test_result_estimate.mjs
+ * Deterministic tests for calculateResultEstimate (Stage 6.1a — cumulative, 30k cap).
+ * Mirrors src/lib/play/result-estimate.ts. Run: node scripts/test_result_estimate.mjs
  */
 
-// ── Inline implementation (mirrors src/lib/play/result-estimate.ts) ───────────
+// ── Mirror of result-estimate.ts ───────────────────────────────────────────────
+const UNIVERSE_TOTAL = 30000;
+const BUCKET_UNIVERSE      = { easy: 1500, medium: 4500, hard: 24000 };
+const DEFAULT_BUCKET_RATES = { easy: 0.7,  medium: 0.4,  hard: 0.2  };
+const LEVEL_THRESHOLDS = [[10000,'master'],[6000,'erudite'],[3000,'strong'],[1500,'good'],[500,'casual']];
+const ZONE_MIN_TOTAL=5, ZONE_MAX=5, STRONG=0.7, WEAK=0.4, STRONG_MAX_GEO=2;
+const ZONE_CATEGORY = { subdomain:'topic', domain:'topic', country:'geo', macroRegion:'geo', era:'time' };
 
-const BASE_BUCKET_TOTALS    = { easy: 1500, medium: 8500, hard: 20000 };
-const DEFAULT_BUCKET_RATES  = { easy: 0.7,  medium: 0.4,  hard: 0.2  };
-const BROADER_UNIVERSE_FACTOR = 2;
-const ZONE_MIN_TOTAL          = 5;
-const STRONG_RATE_THRESHOLD   = 0.7;
-const WEAK_RATE_THRESHOLD     = 0.4;
+const roundTo=(v,n)=>Math.round(v/n)*n;
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+function rangePct(t){if(t>=2000)return 7;if(t>=1000)return 10;if(t>=500)return 12;if(t>=200)return 15;return 20;}
+function levelOf(p){for(const[t,l]of LEVEL_THRESHOLDS)if(p>=t)return l;return 'beginner';}
 
-function roundTo(value, nearest) { return Math.round(value / nearest) * nearest; }
+function calculateResultEstimate(profile){
+  const answers = profile.answers ?? [];
+  const answeredCount=profile.stats.totalAnswers, knowCount=profile.stats.knowCount,
+        heardCount=profile.stats.heardCount, dontKnowCount=profile.stats.dontKnowCount,
+        scoreSum=profile.stats.scoreSum;
+  const scorePercent = answeredCount>0 ? (scoreSum/answeredCount)*100 : 0;
 
-function getRangePercent(totalAnswers) {
-  if (totalAnswers >= 2000) return 7;
-  if (totalAnswers >= 1000) return 10;
-  if (totalAnswers >= 500)  return 12;
-  if (totalAnswers >= 200)  return 15;
-  return 20;
-}
+  const bucketData={};
+  for(const a of answers){if(a.isRegionalSeed===true)continue;const b=a.difficultyBucket??'unknown';if(!bucketData[b])bucketData[b]={sum:0,count:0};bucketData[b].sum+=a.score;bucketData[b].count++;}
 
-function getLevelLabel(publicEstimate) {
-  if (publicEstimate >= 45000) return 'master';
-  if (publicEstimate >= 28000) return 'erudite';
-  if (publicEstimate >= 15000) return 'engaged';
-  if (publicEstimate >= 6000)  return 'casual';
-  return 'beginner';
-}
-
-function calculateResultEstimate(deck, answers, profile) {
-  let knowCount = 0, heardCount = 0, dontKnowCount = 0, scoreSum = 0, answeredCount = 0;
-  const bucketData = {};
-
-  for (const person of deck) {
-    const ans = answers[person.wikidata_id];
-    if (!ans) continue;
-    answeredCount++;
-    const score = ans.answer === 'know' ? 1 : ans.answer === 'heard' ? 0.5 : 0;
-    scoreSum += score;
-    if (ans.answer === 'know')       knowCount++;
-    else if (ans.answer === 'heard') heardCount++;
-    else                             dontKnowCount++;
-    const b = person.difficulty_bucket ?? 'unknown';
-    if (!bucketData[b]) bucketData[b] = { sum: 0, count: 0 };
-    bucketData[b].sum   += score;
-    bucketData[b].count += 1;
+  let rawEstimate=0; const usedDefaultBuckets=[]; const bucketStats={};
+  for(const b of ['easy','medium','hard']){
+    const d=bucketData[b]; const usedDefault=!(d&&d.count>0);
+    const scoreRate=usedDefault?DEFAULT_BUCKET_RATES[b]:d.sum/d.count;
+    const count=usedDefault?0:d.count;
+    bucketStats[b]={count,scoreRate,usedDefault};
+    if(usedDefault)usedDefaultBuckets.push(b);
+    rawEstimate+=BUCKET_UNIVERSE[b]*scoreRate;
   }
+  const calibrationEstimate=roundTo(rawEstimate,100);
+  const publicEstimate=clamp(calibrationEstimate,0,UNIVERSE_TOTAL);
+  const rp=rangePct(answeredCount);
+  const rangeLow=clamp(roundTo(publicEstimate*(1-rp/100),100),0,UNIVERSE_TOTAL);
+  const rangeHigh=clamp(roundTo(publicEstimate*(1+rp/100),100),0,UNIVERSE_TOTAL);
+  const levelLabel=levelOf(publicEstimate);
+  const isPreliminary=answeredCount<100;
 
-  const scorePercent = answeredCount > 0 ? (scoreSum / answeredCount) * 100 : 0;
-
-  let rawCalib = 0;
-  const usedDefaultBuckets = [];
-  const bucketStats = {};
-  for (const b of ['easy', 'medium', 'hard']) {
-    const d           = bucketData[b];
-    const usedDefault = !(d && d.count > 0);
-    const scoreRate   = usedDefault ? DEFAULT_BUCKET_RATES[b] : d.sum / d.count;
-    const count       = usedDefault ? 0 : d.count;
-    bucketStats[b]    = { count, scoreRate, usedDefault };
-    if (usedDefault) usedDefaultBuckets.push(b);
-    rawCalib += BASE_BUCKET_TOTALS[b] * scoreRate;
-  }
-  const calibrationEstimate = roundTo(rawCalib, 100);
-  const publicEstimate = Math.max(0, Math.min(60000,
-    roundTo(calibrationEstimate * BROADER_UNIVERSE_FACTOR, 100)));
-
-  const rangePercent = getRangePercent(profile.stats.totalAnswers);
-  const rangeLow     = roundTo(publicEstimate * (1 - rangePercent / 100), 100);
-  const rangeHigh    = roundTo(publicEstimate * (1 + rangePercent / 100), 100);
-  const levelLabel   = getLevelLabel(publicEstimate);
-  const isPreliminary = profile.stats.totalAnswers < 100;
-
-  const axes = [
-    { axis: 'subdomain',   getTag: p => p.subdomain },
-    { axis: 'domain',      getTag: p => p.domain !== 'unknown' ? p.domain : null },
-    { axis: 'country',     getTag: p => p.country_tag },
-    { axis: 'macroRegion', getTag: p => p.macro_region !== 'unknown' ? p.macro_region : null },
-    { axis: 'era',         getTag: p => p.era_bucket !== 'unknown' ? p.era_bucket : null },
+  const axes=[
+    {axis:'subdomain',   getTag:a=>a.subdomain},
+    {axis:'domain',      getTag:a=>(a.domain&&a.domain!=='unknown')?a.domain:null},
+    {axis:'country',     getTag:a=>a.country},
+    {axis:'macroRegion', getTag:a=>(a.macroRegion&&a.macroRegion!=='unknown')?a.macroRegion:null},
+    {axis:'era',         getTag:a=>(a.era&&a.era!=='unknown')?a.era:null},
   ];
-
-  const zoneMap = new Map();
-  for (const person of deck) {
-    const ans = answers[person.wikidata_id];
-    if (!ans) continue;
-    const score = ans.answer === 'know' ? 1 : ans.answer === 'heard' ? 0.5 : 0;
-    for (const { axis, getTag } of axes) {
-      const tag = getTag(person);
-      if (!tag) continue;
-      const key = `${axis}:${tag}`;
-      const e   = zoneMap.get(key);
-      if (e) { e.total++; e.scoreSum += score; e.rate = e.scoreSum / e.total; }
-      else   { zoneMap.set(key, { axis, tag, total: 1, scoreSum: score, rate: score }); }
-    }
+  const zoneMap=new Map(); const subToDomain={}, countryToRegion={};
+  for(const a of answers){
+    if(a.subdomain&&a.domain&&a.domain!=='unknown')subToDomain[a.subdomain]=a.domain;
+    if(a.country&&a.macroRegion&&a.macroRegion!=='unknown')countryToRegion[a.country]=a.macroRegion;
+    for(const{axis,getTag}of axes){const tag=getTag(a);if(!tag)continue;const key=`${axis}:${tag}`;const e=zoneMap.get(key);
+      if(e){e.total++;e.scoreSum+=a.score;e.rate=e.scoreSum/e.total;}else zoneMap.set(key,{axis,tag,total:1,scoreSum:a.score,rate:a.score});}
   }
-
-  const subToDomain = {}, countryToRegion = {};
-  for (const person of deck) {
-    if (person.subdomain   && person.domain       !== 'unknown') subToDomain[person.subdomain]        = person.domain;
-    if (person.country_tag && person.macro_region !== 'unknown') countryToRegion[person.country_tag]  = person.macro_region;
+  const byRate=(a,b)=>b.rate-a.rate||b.total-a.total;
+  function dedup(zones){const cd=new Set(),cr=new Set();for(const z of zones){if(z.axis==='subdomain'){const d=subToDomain[z.tag];if(d)cd.add(d);}if(z.axis==='country'){const r=countryToRegion[z.tag];if(r)cr.add(r);}}return zones.filter(z=>!(z.axis==='domain'&&cd.has(z.tag))&&!(z.axis==='macroRegion'&&cr.has(z.tag)));}
+  const eligible=[...zoneMap.values()].filter(z=>z.total>=ZONE_MIN_TOTAL);
+  function selectStrongBalanced(zones){
+    const sorted=[...zones].sort(byRate); const result=[]; let geoCount=0;
+    const pushable=z=>!result.includes(z)&&!(ZONE_CATEGORY[z.axis]==='geo'&&geoCount>=STRONG_MAX_GEO);
+    const ft=sorted.find(z=>ZONE_CATEGORY[z.axis]==='topic'); if(ft)result.push(ft);
+    for(const z of sorted){if(result.length>=ZONE_MAX)break;if(!pushable(z))continue;result.push(z);if(ZONE_CATEGORY[z.axis]==='geo')geoCount++;}
+    return result.sort(byRate);
   }
+  const strongZones=selectStrongBalanced(dedup(eligible.filter(z=>z.rate>=STRONG)));
+  const mediumZones=dedup(eligible.filter(z=>z.rate>WEAK&&z.rate<STRONG).sort(byRate)).slice(0,ZONE_MAX);
+  const weakZones=dedup(eligible.filter(z=>z.rate<=WEAK).sort((a,b)=>a.rate-b.rate||b.total-a.total)).slice(0,ZONE_MAX);
 
-  function dedup(zones) {
-    const covDomains = new Set(), covRegions = new Set();
-    for (const z of zones) {
-      if (z.axis === 'subdomain') { const d = subToDomain[z.tag];     if (d) covDomains.add(d); }
-      if (z.axis === 'country')   { const r = countryToRegion[z.tag]; if (r) covRegions.add(r); }
-    }
-    return zones.filter(z =>
-      !(z.axis === 'domain'      && covDomains.has(z.tag)) &&
-      !(z.axis === 'macroRegion' && covRegions.has(z.tag)));
+  return {answeredCount,knowCount,heardCount,dontKnowCount,scoreSum,scorePercent,universeTotal:UNIVERSE_TOTAL,
+    calibrationEstimate,publicEstimate,rangeLow,rangeHigh,rangePercent:rp,levelLabel,bucketStats,usedDefaultBuckets,
+    strongZones,mediumZones,weakZones,isPreliminary};
+}
+
+// ── profile factory ─────────────────────────────────────────────────────────
+function makeProfile(records){
+  const stats={totalAnswers:records.length,knowCount:0,heardCount:0,dontKnowCount:0,scoreSum:0};
+  for(const r of records){
+    if(r.score===1)stats.knowCount++; else if(r.score===0.5)stats.heardCount++; else stats.dontKnowCount++;
+    stats.scoreSum+=r.score;
   }
-
-  const eligible = [...zoneMap.values()].filter(z => z.total >= ZONE_MIN_TOTAL);
-  const strongZones = dedup(eligible.filter(z => z.rate >= STRONG_RATE_THRESHOLD)
-    .sort((a, b) => b.rate - a.rate || b.total - a.total)).slice(0, 5);
-  const weakZones   = dedup(eligible.filter(z => z.rate <= WEAK_RATE_THRESHOLD)
-    .sort((a, b) => a.rate - b.rate || b.total - a.total)).slice(0, 5);
-
-  return { answeredCount, knowCount, heardCount, dontKnowCount, scoreSum, scorePercent,
-           calibrationEstimate, publicEstimate, rangeLow, rangeHigh, rangePercent,
-           levelLabel, bucketStats, usedDefaultBuckets, strongZones, weakZones, isPreliminary };
+  const answers=records.map((r,i)=>({qid:`Q${i}`,answer:r.score===1?'know':r.score===0.5?'heard':'dont_know',
+    score:r.score,difficultyBucket:r.difficultyBucket??null,domain:r.domain??null,occupation:null,
+    subdomain:r.subdomain??null,country:r.country??null,macroRegion:r.macroRegion??null,era:r.era??null,
+    isRegionalSeed:r.isRegionalSeed===true,timestamp:i}));
+  return {version:1,weights:{domain:{},occupation:{},subdomain:{},country:{},macroRegion:{},era:{}},stats,answers};
 }
+function rec(score,bucket,extra={}){return {score,difficultyBucket:bucket,...extra};}
 
-// ── Builders ──────────────────────────────────────────────────────────────────
+// ── harness ───────────────────────────────────────────────────────────────────
+let pass=0,fail=0;
+function check(label,cond,detail=''){if(cond){console.log(`  PASS  ${label}`);pass++;}else{console.log(`  FAIL  ${label}${detail?'  →  '+detail:''}`);fail++;}}
 
-function makeProfile(totalAnswers) {
-  return { version: 1,
-    weights: { domain:{}, occupation:{}, subdomain:{}, country:{}, macroRegion:{}, era:{} },
-    stats: { totalAnswers, knowCount: 0, heardCount: 0, dontKnowCount: 0, scoreSum: 0 },
-    answers: [] };
-}
-
-function makePerson(id, difficulty, opts = {}) {
-  return {
-    wikidata_id: id, name: id, occupation: opts.occupation ?? '', bplace_country: '',
-    birthyear: null, deathyear: null, inclusion_source: 'global',
-    global_rank: 1, global_score: 1, ru_score: 0, kz_score: 0, hpi: 0,
-    domain:      opts.domain      ?? 'unknown',
-    subdomain:   opts.subdomain   ?? null,
-    country_tag: opts.country     ?? null,
-    macro_region: opts.macroRegion ?? 'unknown',
-    era_bucket:  opts.era         ?? 'unknown',
-    difficulty_bucket: difficulty,
-    content_sensitivity: 'normal',
-  };
-}
-
-function makeAnswer(qid, answer) {
-  return { qid, answer, answeredAt: '2026-01-01T00:00:00Z', responseMs: 1000 };
-}
-
-function makeAnswers(deck, answerFn) {
-  const a = {};
-  for (const p of deck) a[p.wikidata_id] = makeAnswer(p.wikidata_id, answerFn(p));
-  return a;
-}
-
-// deck helpers: N cards of given difficulty, k know, rest dont_know
-function mkDeck(prefix, diff, total, know, opts = {}) {
-  const deck = Array.from({ length: total }, (_, i) => makePerson(`${prefix}${i}`, diff, opts));
-  const answers = {};
-  for (let i = 0; i < total; i++)
-    answers[`${prefix}${i}`] = makeAnswer(`${prefix}${i}`, i < know ? 'know' : 'dont_know');
-  return { deck, answers };
-}
-
-// ── Test harness ──────────────────────────────────────────────────────────────
-
-let passed = 0, failed = 0;
-function check(label, condition, detail = '') {
-  if (condition) { console.log(`  PASS  ${label}`); passed++; }
-  else           { console.log(`  FAIL  ${label}${detail ? '  →  ' + detail : ''}`); failed++; }
-}
-
-// ── A. Answer counts ──────────────────────────────────────────────────────────
-console.log('\n── A. Answer counts ──');
+console.log('\n── A: 30k cap (estimate never exceeds 30000) ──');
 {
-  const deck = [
-    makePerson('p1', 'easy'),   makePerson('p2', 'medium'),
-    makePerson('p3', 'hard'),   makePerson('p4', 'easy'),
-    makePerson('p5', 'medium'),
-  ];
-  const answers = {
-    p1: makeAnswer('p1', 'know'),
-    p2: makeAnswer('p2', 'heard'),
-    p3: makeAnswer('p3', 'dont_know'),
-    p4: makeAnswer('p4', 'know'),
-    // p5 unanswered
-  };
-  const r = calculateResultEstimate(deck, answers, makeProfile(100));
-  check('answeredCount = 4',         r.answeredCount === 4,                        `got ${r.answeredCount}`);
-  check('knowCount = 2',             r.knowCount === 2,                            `got ${r.knowCount}`);
-  check('heardCount = 1',            r.heardCount === 1,                           `got ${r.heardCount}`);
-  check('dontKnowCount = 1',         r.dontKnowCount === 1,                        `got ${r.dontKnowCount}`);
-  check('scoreSum = 2.5 (2×1+1×0.5)', Math.abs(r.scoreSum - 2.5) < 0.001,         `got ${r.scoreSum}`);
-  check('isPreliminary = false (totalAnswers=100)', !r.isPreliminary);
+  const recs=[];
+  for(let i=0;i<40;i++)recs.push(rec(1,'easy'));
+  for(let i=0;i<40;i++)recs.push(rec(1,'medium'));
+  for(let i=0;i<40;i++)recs.push(rec(1,'hard'));
+  const r=calculateResultEstimate(makeProfile(recs));
+  check('A1: all-know publicEstimate = 30000', r.publicEstimate===30000, `got ${r.publicEstimate}`);
+  check('A2: publicEstimate ≤ 30000', r.publicEstimate<=30000, `got ${r.publicEstimate}`);
+  check('A3: rangeHigh clamped ≤ 30000', r.rangeHigh<=30000, `got ${r.rangeHigh}`);
+  check('A4: rangeLow ≥ 0', r.rangeLow>=0, `got ${r.rangeLow}`);
+  check('A5: level master at 30000', r.levelLabel==='master', r.levelLabel);
 }
+
+console.log('\n── B: rangeHigh clamp when public near cap ──');
 {
-  const deck = [makePerson('q1', 'easy')];
-  const answers = { q1: makeAnswer('q1', 'know') };
-  const r = calculateResultEstimate(deck, answers, makeProfile(50));
-  check('isPreliminary = true (totalAnswers=50)', r.isPreliminary);
+  const recs=[];
+  for(let i=0;i<20;i++)recs.push(rec(1,'easy'));
+  for(let i=0;i<20;i++)recs.push(rec(1,'medium'));
+  for(let i=0;i<20;i++)recs.push(rec(i<19?1:0,'hard')); // 19/20 = 0.95
+  const r=calculateResultEstimate(makeProfile(recs)); // 60 answers → 20%
+  check('B1: publicEstimate ≤ 30000', r.publicEstimate<=30000, `got ${r.publicEstimate}`);
+  check('B2: rangeHigh = 30000 (clamped from >30k)', r.rangeHigh===30000, `got ${r.rangeHigh}`);
 }
 
-// ── B. Range percent ──────────────────────────────────────────────────────────
-console.log('\n── B. Range percent ──');
+console.log('\n── C: zero knowledge ──');
 {
-  const deck = [makePerson('r1', 'easy')];
-  const answers = { r1: makeAnswer('r1', 'know') };
-  for (const [total, expected] of [[100,20],[200,15],[500,12],[1000,10],[2000,7]]) {
-    const r = calculateResultEstimate(deck, answers, makeProfile(total));
-    check(`totalAnswers=${total} → rangePercent=${expected}`,
-      r.rangePercent === expected, `got ${r.rangePercent}`);
-  }
+  const recs=[];
+  for(let i=0;i<30;i++)recs.push(rec(0,'easy'));
+  for(let i=0;i<30;i++)recs.push(rec(0,'medium'));
+  for(let i=0;i<30;i++)recs.push(rec(0,'hard'));
+  const r=calculateResultEstimate(makeProfile(recs));
+  check('C1: publicEstimate = 0', r.publicEstimate===0, `got ${r.publicEstimate}`);
+  check('C2: rangeLow = 0', r.rangeLow===0, `got ${r.rangeLow}`);
+  check('C3: rangeHigh = 0', r.rangeHigh===0, `got ${r.rangeHigh}`);
+  check('C4: level beginner', r.levelLabel==='beginner', r.levelLabel);
 }
 
-// ── C. All-easy all-know: bucket extrapolation + bucketStats ─────────────────
-console.log('\n── C. All-easy all-know: bucket extrapolation ──');
+console.log('\n── D: bucket extrapolation math (30k base) ──');
 {
-  // Missing medium/hard → defaults 0.4 / 0.2 apply.
-  // calib = 1500×1.0 + 8500×0.4 + 20000×0.2 = 8900; pub = 17800
-  const { deck, answers } = mkDeck('c', 'easy', 100, 100);
-  const r = calculateResultEstimate(deck, answers, makeProfile(100));
-  check('C: calibrationEstimate = 8900',   r.calibrationEstimate === 8900,  `got ${r.calibrationEstimate}`);
-  check('C: publicEstimate = 17800',        r.publicEstimate === 17800,       `got ${r.publicEstimate}`);
-  check('C: easy.usedDefault = false',      !r.bucketStats.easy.usedDefault,  `got ${r.bucketStats.easy.usedDefault}`);
-  check('C: medium.usedDefault = true',     r.bucketStats.medium.usedDefault, `got ${r.bucketStats.medium.usedDefault}`);
-  check('C: hard.usedDefault = true',       r.bucketStats.hard.usedDefault,   `got ${r.bucketStats.hard.usedDefault}`);
-  check('C: usedDefaultBuckets = [medium, hard]',
-    r.usedDefaultBuckets.length === 2 &&
-    r.usedDefaultBuckets.includes('medium') &&
-    r.usedDefaultBuckets.includes('hard'),
-    `got [${r.usedDefaultBuckets}]`);
-  check('C: pubEst < naive 30000', r.publicEstimate < 30000, `pubEst=${r.publicEstimate}`);
-  console.log(`  INFO  all-easy all-know: calibEst=${r.calibrationEstimate}  pubEst=${r.publicEstimate}  level=${r.levelLabel}`);
+  const recs=[];
+  for(let i=0;i<10;i++)recs.push(rec(i<8?1:0,'easy'));   // 0.8
+  for(let i=0;i<10;i++)recs.push(rec(i<4?1:0,'medium')); // 0.4
+  for(let i=0;i<10;i++)recs.push(rec(i<2?1:0,'hard'));   // 0.2
+  const r=calculateResultEstimate(makeProfile(recs));
+  check('D1: estimate = 7800', r.publicEstimate===7800, `got ${r.publicEstimate}`); // 1200+1800+4800
+  check('D2: level erudite (6000–9999)', r.levelLabel==='erudite', r.levelLabel);
 }
+
+console.log('\n── E: default rates for missing buckets ──');
 {
-  // All buckets covered → usedDefaultBuckets = []
-  const e = mkDeck('cv_e', 'easy',   34, 20);
-  const m = mkDeck('cv_m', 'medium', 33, 15);
-  const h = mkDeck('cv_h', 'hard',   33,  8);
-  const deck = [...e.deck,...m.deck,...h.deck];
-  const answers = {...e.answers,...m.answers,...h.answers};
-  const r = calculateResultEstimate(deck, answers, makeProfile(100));
-  check('C2: all buckets covered → usedDefaultBuckets = []',
-    r.usedDefaultBuckets.length === 0,
-    `got [${r.usedDefaultBuckets}]`);
-  check('C2: no bucket usedDefault',
-    !r.bucketStats.easy.usedDefault && !r.bucketStats.medium.usedDefault && !r.bucketStats.hard.usedDefault);
+  const recs=[]; for(let i=0;i<10;i++)recs.push(rec(1,'easy'));
+  const r=calculateResultEstimate(makeProfile(recs)); // 1500 + 4500*0.4 + 24000*0.2 = 8100
+  check('E1: estimate = 8100 (defaults applied)', r.publicEstimate===8100, `got ${r.publicEstimate}`);
+  check('E2: usedDefaultBuckets = [medium,hard]', JSON.stringify(r.usedDefaultBuckets)===JSON.stringify(['medium','hard']));
 }
 
-// ── D. Mixed rates: easy 90%, medium 50%, hard 27% ───────────────────────────
-console.log('\n── D. Mixed rates ──');
+console.log('\n── F: medium zone tier ──');
 {
-  // 10 easy: 9 know (rate=0.9)
-  // 10 medium: 5 know (rate=0.5)
-  // 100 hard: 27 know (rate=0.27)
-  const eD = mkDeck('de', 'easy',    10,  9);
-  const mD = mkDeck('dm', 'medium',  10,  5);
-  const hD = mkDeck('dh', 'hard',   100, 27);
-  const deck    = [...eD.deck,    ...mD.deck,    ...hD.deck];
-  const answers = { ...eD.answers, ...mD.answers, ...hD.answers };
-
-  const rawExpected    = 1500*0.9 + 8500*0.5 + 20000*0.27; // = 1350+4250+5400 = 11000
-  const calibExpected  = roundTo(rawExpected, 100);          // = 11000
-  const pubExpected    = roundTo(calibExpected * 2, 100);    // = 22000
-
-  const r = calculateResultEstimate(deck, answers, makeProfile(120));
-  check(`D: calibEst = ${calibExpected}`,
-    Math.abs(r.calibrationEstimate - calibExpected) <= 100,
-    `got ${r.calibrationEstimate}`);
-  check(`D: pubEst = ${pubExpected}`,
-    Math.abs(r.publicEstimate - pubExpected) <= 200,
-    `got ${r.publicEstimate}`);
-  check('D: pubEst = calibEst × 2',
-    Math.abs(r.publicEstimate - r.calibrationEstimate * 2) <= 200);
+  const recs=[];
+  for(let i=0;i<10;i++)recs.push(rec(i<5?1:0,'medium',{domain:'sports',subdomain:'football'})); // 0.5
+  for(let i=0;i<10;i++)recs.push(rec(0,'hard',{domain:'science'}));
+  const r=calculateResultEstimate(makeProfile(recs));
+  const inMed=r.mediumZones.some(z=>z.tag==='football'||z.tag==='sports');
+  const inStrong=r.strongZones.some(z=>z.tag==='football'||z.tag==='sports');
+  const inWeak=r.weakZones.some(z=>z.tag==='football'||z.tag==='sports');
+  check('F1: 0.5-rate zone in mediumZones', inMed);
+  check('F2: not in strong', !inStrong);
+  check('F3: not in weak', !inWeak);
 }
 
-// ── E. Missing hard bucket → default 0.2 applied ────────────────────────────
-console.log('\n── E. Missing hard bucket ──');
+console.log('\n── G: axis balance — geography cannot be the only strong zone ──');
 {
-  // Deck has only easy (10/10 know) + medium (5/10 know). No hard.
-  const eD = mkDeck('ee', 'easy',   10, 10);
-  const mD = mkDeck('em', 'medium', 10,  5);
-  const deck    = [...eD.deck,    ...mD.deck];
-  const answers = { ...eD.answers, ...mD.answers };
-
-  const rawExpected   = 1500*1.0 + 8500*0.5 + 20000*0.2; // = 1500+4250+4000 = 9750
-  const calibExpected = roundTo(rawExpected, 100);         // = 9800
-
-  const r = calculateResultEstimate(deck, answers, makeProfile(100));
-  check(`E: calibEst = ${calibExpected} (hard default 0.2 applied)`,
-    Math.abs(r.calibrationEstimate - calibExpected) <= 100,
-    `got ${r.calibrationEstimate}`);
+  const recs=[];
+  for(let i=0;i<6;i++)recs.push(rec(1,'easy',{country:'France',macroRegion:'western_europe'}));
+  for(let i=0;i<6;i++)recs.push(rec(1,'easy',{country:'Japan',macroRegion:'east_asia'}));
+  for(let i=0;i<6;i++)recs.push(rec(1,'easy',{country:'Brazil',macroRegion:'latin_america'}));
+  for(let i=0;i<6;i++)recs.push(rec(1,'medium',{domain:'sports',subdomain:'tennis'}));
+  const r=calculateResultEstimate(makeProfile(recs));
+  const geoStrong=r.strongZones.filter(z=>z.axis==='country'||z.axis==='macroRegion').length;
+  const topicStrong=r.strongZones.filter(z=>z.axis==='domain'||z.axis==='subdomain').length;
+  check('G1: ≥1 topic zone in strong', topicStrong>=1, `topic=${topicStrong}`);
+  check('G2: geo capped ≤2 in strong', geoStrong<=STRONG_MAX_GEO, `geo=${geoStrong}`);
+  check('G3: strong is not all-geo', !(geoStrong>0 && topicStrong===0));
 }
 
-// ── F. Rounding ───────────────────────────────────────────────────────────────
-console.log('\n── F. Rounding ──');
+console.log('\n── H: cumulative counts from profile.stats ──');
 {
-  const { deck, answers } = mkDeck('f', 'medium', 20, 7);
-  const r = calculateResultEstimate(deck, answers, makeProfile(100));
-  check('F: calibEst % 100 = 0',  r.calibrationEstimate % 100 === 0, `got ${r.calibrationEstimate}`);
-  check('F: pubEst    % 100 = 0', r.publicEstimate      % 100 === 0, `got ${r.publicEstimate}`);
-  check('F: rangeLow  % 100 = 0', r.rangeLow            % 100 === 0, `got ${r.rangeLow}`);
-  check('F: rangeHigh % 100 = 0', r.rangeHigh           % 100 === 0, `got ${r.rangeHigh}`);
+  const recs=[rec(1,'easy'),rec(0.5,'medium'),rec(0,'hard'),rec(1,'easy')];
+  const r=calculateResultEstimate(makeProfile(recs));
+  check('H1: knowCount=2', r.knowCount===2);
+  check('H2: heardCount=1', r.heardCount===1);
+  check('H3: dontKnowCount=1', r.dontKnowCount===1);
+  check('H4: answeredCount=4', r.answeredCount===4);
 }
 
-// ── G. Level labels ───────────────────────────────────────────────────────────
-console.log('\n── G. Level labels ──');
+console.log('\n── I: range narrows with cumulative answers ──');
 {
-  function threeDecks(know30, total30 = 30) {
-    // Returns deck+answers with equal-size easy/medium/hard pools
-    const e = mkDeck('ge', 'easy',   total30, know30);
-    const m = mkDeck('gm', 'medium', total30, know30);
-    const h = mkDeck('gh', 'hard',   total30, know30);
-    return { deck: [...e.deck,...m.deck,...h.deck], answers: {...e.answers,...m.answers,...h.answers} };
-  }
-
-  // beginner: all dont_know → pub = 0 < 6000
-  {
-    const { deck, answers } = threeDecks(0);
-    const r = calculateResultEstimate(deck, answers, makeProfile(100));
-    check(`G: beginner (pub=${r.publicEstimate})`, r.levelLabel === 'beginner', `got ${r.levelLabel}`);
-  }
-  // casual: 1/10 each → calib = 3000, pub = 6000 (≥ 6000)
-  {
-    const e = mkDeck('ca_e', 'easy',   10, 1);
-    const m = mkDeck('ca_m', 'medium', 10, 1);
-    const h = mkDeck('ca_h', 'hard',   10, 1);
-    const deck = [...e.deck,...m.deck,...h.deck];
-    const answers = {...e.answers,...m.answers,...h.answers};
-    const r = calculateResultEstimate(deck, answers, makeProfile(100));
-    check(`G: casual (pub=${r.publicEstimate})`, r.levelLabel === 'casual', `got ${r.levelLabel}`);
-  }
-  // engaged: 8/30 each → calib = 8000, pub = 16000 (15000–28000)
-  {
-    const { deck, answers } = threeDecks(8);
-    const r = calculateResultEstimate(deck, answers, makeProfile(100));
-    check(`G: engaged (pub=${r.publicEstimate})`, r.levelLabel === 'engaged', `got ${r.levelLabel}`);
-  }
-  // erudite: 16/30 each → calib = 16000, pub = 32000 (28000–45000)
-  {
-    const { deck, answers } = threeDecks(16);
-    const r = calculateResultEstimate(deck, answers, makeProfile(100));
-    check(`G: erudite (pub=${r.publicEstimate})`, r.levelLabel === 'erudite', `got ${r.levelLabel}`);
-  }
-  // master: 25/30 each → calib = 25000, pub = 50000 (≥ 45000)
-  {
-    const { deck, answers } = threeDecks(25);
-    const r = calculateResultEstimate(deck, answers, makeProfile(100));
-    check(`G: master (pub=${r.publicEstimate})`, r.levelLabel === 'master', `got ${r.levelLabel}`);
-  }
+  const mk=n=>{const recs=[];for(let i=0;i<n;i++)recs.push(rec(i%2,'medium'));return calculateResultEstimate(makeProfile(recs));};
+  check('I1: <200 → 20%', mk(100).rangePercent===20);
+  check('I2: ≥200 → 15%', mk(200).rangePercent===15);
+  check('I3: ≥500 → 12%', mk(500).rangePercent===12);
 }
 
-// ── H. Strong zones + football dedup ─────────────────────────────────────────
-console.log('\n── H. Strong zones (football/sports dedup) ──');
+console.log('\n── J: isPreliminary flag ──');
 {
-  const deck = [];
-  const answers = {};
-  // 8 football cards (subdomain=football, domain=sports), 7 know (rate=7/8=0.875)
-  for (let i = 0; i < 8; i++) {
-    const id = `fb${i}`;
-    deck.push(makePerson(id, 'easy', { subdomain: 'football', domain: 'sports' }));
-    answers[id] = makeAnswer(id, i < 7 ? 'know' : 'dont_know');
-  }
-  // 4 other sports (no subdomain), all know → domain:sports total=12, sum=11, rate≈0.917
-  for (let i = 0; i < 4; i++) {
-    const id = `sp${i}`;
-    deck.push(makePerson(id, 'easy', { domain: 'sports' }));
-    answers[id] = makeAnswer(id, 'know');
-  }
-  // 10 politics (domain=politics), all know → strongZone but unrelated
-  for (let i = 0; i < 10; i++) {
-    const id = `po${i}`;
-    deck.push(makePerson(id, 'easy', { domain: 'politics' }));
-    answers[id] = makeAnswer(id, 'know');
-  }
-  const r = calculateResultEstimate(deck, answers, makeProfile(100));
-  const hasFootball = r.strongZones.some(z => z.axis === 'subdomain' && z.tag === 'football');
-  const hasSports   = r.strongZones.some(z => z.axis === 'domain'    && z.tag === 'sports');
-  check('H: subdomain:football in strongZones (rate=0.875)',   hasFootball,
-    JSON.stringify(r.strongZones.map(z => `${z.axis}:${z.tag}`)));
-  check('H: domain:sports deduped (covered by football)',       !hasSports,
-    JSON.stringify(r.strongZones.map(z => `${z.axis}:${z.tag}`)));
+  const mk=n=>{const recs=[];for(let i=0;i<n;i++)recs.push(rec(1,'easy'));return calculateResultEstimate(makeProfile(recs));};
+  check('J1: 99 → preliminary', mk(99).isPreliminary===true);
+  check('J2: 100 → not preliminary', mk(100).isPreliminary===false);
 }
 
-// ── I. Weak zones ─────────────────────────────────────────────────────────────
-console.log('\n── I. Weak zones ──');
+console.log('\n── K: fuzz — estimate & range never exceed [0,30000] (500 runs) ──');
 {
-  const deck = [];
-  const answers = {};
-  // 6 science cards, 1 know (rate=1/6≈0.167) → weakZone
-  for (let i = 0; i < 6; i++) {
-    const id = `sc${i}`;
-    deck.push(makePerson(id, 'medium', { domain: 'science' }));
-    answers[id] = makeAnswer(id, i === 0 ? 'know' : 'dont_know');
+  let v=0;
+  for(let t=0;t<500;t++){
+    const recs=[]; const n=20+Math.floor(Math.random()*200);
+    const buckets=['easy','medium','hard','unknown'];
+    for(let i=0;i<n;i++){const score=[0,0.5,1][Math.floor(Math.random()*3)];recs.push(rec(score,buckets[Math.floor(Math.random()*buckets.length)]));}
+    const r=calculateResultEstimate(makeProfile(recs));
+    if(r.publicEstimate>30000||r.publicEstimate<0)v++;
+    if(r.rangeHigh>30000||r.rangeLow<0)v++;
+    if(r.calibrationEstimate>30000||r.calibrationEstimate<0)v++;
   }
-  // 10 politics all know → strong, not weak
-  for (let i = 0; i < 10; i++) {
-    const id = `pw${i}`;
-    deck.push(makePerson(id, 'easy', { domain: 'politics' }));
-    answers[id] = makeAnswer(id, 'know');
-  }
-  const r = calculateResultEstimate(deck, answers, makeProfile(100));
-  const hasScience  = r.weakZones.some(z => z.axis === 'domain' && z.tag === 'science');
-  const hasPolitics = r.weakZones.some(z => z.axis === 'domain' && z.tag === 'politics');
-  check('I: domain:science in weakZones (rate≈0.167)',    hasScience,
-    JSON.stringify(r.weakZones.map(z => `${z.axis}:${z.tag}`)));
-  check('I: domain:politics NOT in weakZones (rate=1.0)', !hasPolitics);
+  check('K1: no estimate/range exceeded [0,30000] in 500 fuzz runs', v===0, `${v} violations`);
 }
 
-// ── J. Country/macroRegion dedup ─────────────────────────────────────────────
-console.log('\n── J. Country/macroRegion dedup ──');
+console.log('\n── L: empty profile safety ──');
 {
-  const deck = [];
-  const answers = {};
-  // 8 KAZ country (macroRegion=kz_ca), all know → rate=1.0 → strong
-  for (let i = 0; i < 8; i++) {
-    const id = `kz${i}`;
-    deck.push(makePerson(id, 'easy', { country: 'KAZ', macroRegion: 'kz_ca' }));
-    answers[id] = makeAnswer(id, 'know');
-  }
-  // 3 more kz_ca (no country_tag set), all know → macroRegion total=11, rate=1.0 → also strong candidate
-  for (let i = 0; i < 3; i++) {
-    const id = `kzx${i}`;
-    deck.push(makePerson(id, 'easy', { macroRegion: 'kz_ca' }));
-    answers[id] = makeAnswer(id, 'know');
-  }
-  const r = calculateResultEstimate(deck, answers, makeProfile(100));
-  const hasKAZ   = r.strongZones.some(z => z.axis === 'country'     && z.tag === 'KAZ');
-  const hasKzCa  = r.strongZones.some(z => z.axis === 'macroRegion' && z.tag === 'kz_ca');
-  check('J: country:KAZ in strongZones',                  hasKAZ,
-    JSON.stringify(r.strongZones.map(z => `${z.axis}:${z.tag}`)));
-  check('J: macroRegion:kz_ca deduped (covered by KAZ)', !hasKzCa,
-    JSON.stringify(r.strongZones.map(z => `${z.axis}:${z.tag}`)));
+  const r=calculateResultEstimate({version:1,weights:{},stats:{totalAnswers:0,knowCount:0,heardCount:0,dontKnowCount:0,scoreSum:0},answers:[]});
+  check('L1: empty → defaults estimate 7700', r.publicEstimate===7700, `got ${r.publicEstimate}`); // 1050+1800+4800=7650 → roundTo100 → 7700
+  check('L2: empty → no zones', r.strongZones.length===0&&r.mediumZones.length===0&&r.weakZones.length===0);
+  check('L3: empty → preliminary', r.isPreliminary===true);
 }
 
-// ── K. scorePercent ───────────────────────────────────────────────────────────
-console.log('\n── K. scorePercent ──');
+console.log('\n── M: regional seed excluded from bucket estimate, kept in zones ──');
 {
-  // 4 know (score=1), 4 heard (score=0.5), 2 dont_know (score=0): sum=4+2=6, pct=6/10*100=60
-  const deck = Array.from({length: 10}, (_, i) => makePerson(`kp${i}`, 'easy'));
-  const answers = {};
-  for (let i = 0; i < 10; i++) {
-    const a = i < 4 ? 'know' : i < 8 ? 'heard' : 'dont_know';
-    answers[`kp${i}`] = makeAnswer(`kp${i}`, a);
-  }
-  const r = calculateResultEstimate(deck, answers, makeProfile(100));
-  check('K: scorePercent = 60 (4know+4heard+2dont_know)',
-    Math.abs(r.scorePercent - 60) < 0.001, `got ${r.scorePercent}`);
+  const recs=[];
+  // 10 regular easy, all know → easy rate 1.0 → 1500
+  for(let i=0;i<10;i++)recs.push(rec(1,'easy',{domain:'science'}));
+  // 10 regional-seed HARD, all know, flagged → if counted, hard rate 1.0 (=24000); must be excluded
+  for(let i=0;i<10;i++)recs.push(rec(1,'hard',{domain:'sports',subdomain:'boxing',country:'Kazakhstan',macroRegion:'kz_ca',isRegionalSeed:true}));
+  const r=calculateResultEstimate(makeProfile(recs));
+  // hard bucket has only seeds (excluded) → default 0.2; medium default 0.4
+  // 1500*1 + 4500*0.4 + 24000*0.2 = 8100
+  check('M1: seeds excluded from estimate (=8100, not ~27300)', r.publicEstimate===8100, `got ${r.publicEstimate}`);
+  check('M2: hard bucket uses default (seeds excluded)', r.bucketStats.hard.usedDefault===true);
+  check('M3: regional-seed zone (boxing) still appears in strong', r.strongZones.some(z=>z.tag==='boxing'));
 }
 
-// ── Examples (informational) ──────────────────────────────────────────────────
-console.log('\n── Examples ──');
+console.log('\n── N: MVP level scale boundaries ──');
 {
-  function exampleResult(label, know30, total30 = 30, totalAnswers = 100) {
-    const e = mkDeck(`ex_e_${label}`, 'easy',   total30, know30);
-    const m = mkDeck(`ex_m_${label}`, 'medium', total30, know30);
-    const h = mkDeck(`ex_h_${label}`, 'hard',   total30, know30);
-    const deck = [...e.deck,...m.deck,...h.deck];
-    const answers = {...e.answers,...m.answers,...h.answers};
-    const r = calculateResultEstimate(deck, answers, makeProfile(totalAnswers));
-    const defaults = r.usedDefaultBuckets.length ? ` [default: ${r.usedDefaultBuckets}]` : '';
-    console.log(`  ${label.padEnd(11)} know=${know30}/${total30}  calib=${r.calibrationEstimate}  pub=${r.publicEstimate}  range=${r.rangeLow}–${r.rangeHigh}  level=${r.levelLabel}${defaults}`);
-  }
-  exampleResult('weak',        3);   //  10% → pub ≈  6000 → casual
-  exampleResult('average',     9);   //  30% → pub ≈ 18000 → engaged
-  exampleResult('strong',     19);   // ≈63% → pub ≈ 38000 → erudite
-  exampleResult('exceptional', 25);  // ≈83% → pub ≈ 50000 → master
+  check('N1: 499 → beginner', levelOf(499)==='beginner');
+  check('N2: 500 → casual', levelOf(500)==='casual');
+  check('N3: 1499 → casual', levelOf(1499)==='casual');
+  check('N4: 1500 → good', levelOf(1500)==='good');
+  check('N5: 2999 → good', levelOf(2999)==='good');
+  check('N6: 3000 → strong', levelOf(3000)==='strong');
+  check('N7: 5999 → strong', levelOf(5999)==='strong');
+  check('N8: 6000 → erudite', levelOf(6000)==='erudite');
+  check('N9: 9999 → erudite', levelOf(9999)==='erudite');
+  check('N10: 10000 → master', levelOf(10000)==='master');
 }
 
-// ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(60)}`);
-console.log(`Total: ${passed + failed}  PASS: ${passed}  FAIL: ${failed}`);
-if (failed > 0) process.exit(1);
+console.log(`Total: ${pass+fail}  PASS: ${pass}  FAIL: ${fail}`);
+if(fail>0)process.exit(1);

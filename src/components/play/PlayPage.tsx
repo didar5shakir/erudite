@@ -207,7 +207,7 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
 
   if (session.completed) {
     const profile = getOrCreateAdaptiveProfile();
-    const estimate = calculateResultEstimate(session.deck, session.answers, profile);
+    const estimate = calculateResultEstimate(profile);
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 py-8">
         <PlayResult

@@ -32,6 +32,7 @@ export interface AnswerRecord {
   country:         string | null;
   macroRegion:     string | null;
   era:             string | null;
+  isRegionalSeed?: boolean;   // kz_ca seed card; absent ⇒ false (legacy records)
   timestamp:       number;
 }
 
@@ -226,6 +227,7 @@ export function updateAdaptiveProfile(
     country:         isValidTag(person.country_tag)  ? person.country_tag  : null,
     macroRegion:     isValidTag(person.macro_region) ? person.macro_region : null,
     era:             isValidTag(person.era_bucket)   ? person.era_bucket   : null,
+    isRegionalSeed:  person.isRegionalSeed === true,
     timestamp:       options.timestamp,
   };
 
