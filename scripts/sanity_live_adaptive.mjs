@@ -433,6 +433,49 @@ function simulateSession(region, answerFn, rng) {
   return { deck, profile };
 }
 
+// ── Continuation simulator (mirrors Stage 6.2 cumulative-exclusion fix) ────────
+// Plays `numSessions` back-to-back 100-card sessions on ONE preserved profile.
+// Calibration excludes cumulative answered QIDs (createInitialSessionDeck excludeIds);
+// adaptive append excludes current deck + cumulative profile history.
+function simulateContinuation(region, numSessions, rng) {
+  const safe = {
+    top_30000: pools.top_30000.filter(p => !isSensitive(p)),
+    ru_quota:  pools.ru_quota.filter(p  => !isSensitive(p)),
+    kz_quota:  pools.kz_quota.filter(p  => !isSensitive(p)),
+    hpi_quota: pools.hpi_quota.filter(p => !isSensitive(p)),
+    kz_ca_top: (pools.kz_ca_top ?? []).filter(p => !isSensitive(p)),
+  };
+  const kzCaIds = new Set(safe.kz_ca_top.map(p => p.wikidata_id));
+  const answered = new Set();      // cumulative answered QIDs across all sessions
+  let profile = emptyProfile();
+  const sessionDecks = [];
+
+  for (let s = 0; s < numSessions; s++) {
+    // Calibration excludes the whole cumulative history.
+    let deck = createCalibrationBlock(safe, kzCaIds, region ?? 'global', new Set(answered));
+    for (let i = 0; i < SESSION_CARD_COUNT; i++) {
+      const person = deck[i];
+      if (!person) break;
+      profile = updateProfile(profile, person, 'heard');
+      answered.add(person.wikidata_id);
+      const nextIndex = i + 1;
+      if (nextIndex >= CALIB_SIZE && deck.length < SESSION_CARD_COUNT) {
+        const excl = new Set(answered);
+        for (const p of deck) excl.add(p.wikidata_id);
+        const candidates = buildAdaptiveCandidates(pools, region, excl);
+        const counts = getInitialSessionCounts(deck);
+        const recentCards = deck.slice(-10);
+        const exploreRatio = nextIndex < 50 ? EXPLORATION_RATIO_EARLY : EXPLORATION_RATIO_LATE;
+        const mode = rng() < exploreRatio ? 'explore' : 'exploit';
+        const nextCard = pickNextAdaptiveCard({ candidates, profile, usedIds: excl, counts, recentCards, rng, mode });
+        if (nextCard) deck = [...deck, nextCard];
+      }
+    }
+    sessionDecks.push(deck.map(p => p.wikidata_id));
+  }
+  return { sessionDecks, profile, answered };
+}
+
 // ── Test harness ──────────────────────────────────────────────────────────────
 
 let passed = 0, failed = 0;
@@ -646,6 +689,27 @@ console.log('\n── I: Null-country cap (UNKNOWN_COUNTRY_MAX=8) ──');
     capViolations === 0, `${capViolations}/20 exceeded cap`);
   check('I2: no consecutive null-country streak > 2 (20 runs)',
     maxConsecutiveNullViolations === 0, `${maxConsecutiveNullViolations} violations`);
+}
+
+// ── J: Continuation integrity — no repeats across 100→200→300→400 ─────────────
+console.log('\n── J: Continuation integrity (cumulative no-repeat) ──');
+for (const region of [undefined, 'kz']) {
+  const label = region ?? 'global';
+  let dupAcross = 0, firstVsSecondOverlap = 0, minSession = Infinity;
+  for (let run = 0; run < 10; run++) {
+    const { sessionDecks } = simulateContinuation(region, 4, () => Math.random());
+    const all = sessionDecks.flat();
+    const dups = all.length - new Set(all).size;
+    if (dups > 0) dupAcross++;
+    // explicit: session1 ∩ session2 must be empty
+    const s1 = new Set(sessionDecks[0]);
+    const overlap12 = sessionDecks[1].filter(q => s1.has(q)).length;
+    if (overlap12 > 0) firstVsSecondOverlap++;
+    for (const d of sessionDecks) minSession = Math.min(minSession, d.length);
+  }
+  check(`J[${label}]: no QID repeats across 4 continued sessions (10 runs)`, dupAcross === 0, `${dupAcross}/10 had repeats`);
+  check(`J[${label}]: session1 ∩ session2 empty (10 runs)`, firstVsSecondOverlap === 0, `${firstVsSecondOverlap}/10 overlapped`);
+  check(`J[${label}]: every session still reaches 100 cards`, minSession === SESSION_CARD_COUNT, `min=${minSession}`);
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────────

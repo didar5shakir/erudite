@@ -23,6 +23,7 @@ import {
   getInitialSessionCounts,
   buildAdaptiveCandidates,
   pickNextAdaptiveCard,
+  createInitialSessionDeck,
 } from '@/lib/play/play-sampler';
 import type { PlayPoolsExtended } from '@/lib/play/play-sampler';
 import { calculateResultEstimate } from '@/lib/play/result-estimate';
@@ -50,7 +51,11 @@ function appendAdaptiveCard(
   region:  'kz' | 'global',
   nextIndex: number,
 ): { deck: Person[]; cardIds: string[] } {
+  const profile = getOrCreateAdaptiveProfile();
+  // Exclude the whole cumulative answer history, not just the current session,
+  // so continuation (200/300/500/1000…) never repeats an already-answered person.
   const usedIds = new Set(cardIds);
+  for (const a of profile.answers) usedIds.add(a.qid);
   const candidates = buildAdaptiveCandidates(pools, region, usedIds);
   const counts = getInitialSessionCounts(deck);
   const recentCards = deck.slice(-10);
@@ -58,7 +63,7 @@ function appendAdaptiveCard(
   const mode: 'exploit' | 'explore' = Math.random() < exploreRatio ? 'explore' : 'exploit';
   const nextCard = pickNextAdaptiveCard({
     candidates,
-    profile: getOrCreateAdaptiveProfile(),
+    profile,
     usedIds,
     counts,
     recentCards,
@@ -142,7 +147,10 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
       newDeck.length < SESSION_CARD_COUNT &&
       pools !== null
     ) {
+      // Cumulative exclusion: current session cards + entire profile history
+      // (updatedProfile already includes the answer just recorded above).
       const usedIds = new Set(newCardIds);
+      for (const a of updatedProfile.answers) usedIds.add(a.qid);
       const candidates = buildAdaptiveCandidates(pools, region, usedIds);
       const counts = getInitialSessionCounts(newDeck);
       const recentCards = newDeck.slice(-10);
@@ -179,9 +187,17 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
   }
 
   // Continue: start a fresh 100-card session; cumulative adaptive profile is PRESERVED.
+  // The new calibration deck excludes every previously-answered QID so a person never
+  // repeats across the 100→200→300→… progression. Falls back to the SSR initialDeck
+  // only if pools haven't loaded (shouldn't happen post-completion, but stays safe).
   function handleContinue() {
     clearSession(locale, region);
-    const fresh = createNewSession(locale, initialDeck, region);
+    const answeredIds = new Set(getOrCreateAdaptiveProfile().answers.map(a => a.qid));
+    const samplerRegion = region === 'kz' ? 'kz' : undefined;
+    const deck = pools
+      ? createInitialSessionDeck(pools, samplerRegion, answeredIds)
+      : initialDeck;
+    const fresh = createNewSession(locale, deck, region);
     saveSession(fresh, region);
     setSession(fresh);
     startedAt.current = Date.now();

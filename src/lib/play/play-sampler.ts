@@ -369,7 +369,11 @@ export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: 'kz'):
 
 // ── Initial session deck (calibration only) ───────────────────────────────────
 
-export function createInitialSessionDeck(pools: PlayPoolsExtended, region?: 'kz'): Person[] {
+export function createInitialSessionDeck(
+  pools: PlayPoolsExtended,
+  region?: 'kz',
+  excludeIds?: ReadonlySet<string>,
+): Person[] {
   const safe: PlayPoolsExtended = {
     top_30000: pools.top_30000.filter(p => !isSensitivePerson(p)),
     ru_quota:  pools.ru_quota.filter(p  => !isSensitivePerson(p)),
@@ -378,7 +382,9 @@ export function createInitialSessionDeck(pools: PlayPoolsExtended, region?: 'kz'
     kz_ca_top: pools.kz_ca_top?.filter(p => !isSensitivePerson(p)),
   };
   const kzCaIds = new Set((safe.kz_ca_top ?? []).map(p => p.wikidata_id));
-  const usedIds = new Set<string>();
+  // Seeding usedIds with excludeIds keeps already-answered QIDs (cumulative profile
+  // history) out of the calibration block on continuation.
+  const usedIds = new Set<string>(excludeIds);
   return createCalibrationBlock(safe, kzCaIds, region ?? 'global', usedIds);
 }
 
