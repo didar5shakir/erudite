@@ -121,6 +121,28 @@ function getLevelLabel(publicEstimate: number): LevelLabel {
   return 'beginner';
 }
 
+// ── Continuation / accuracy helpers (presentation) ──────────────────────────────
+
+export type AccuracyTier = 'baseline' | 'stable' | 'high' | 'detailed';
+
+// Next milestone for the "Continue" button, based on cumulative answeredCount.
+// Returns null past 3000 (open-ended "continue further").
+export function getContinueMilestone(answeredCount: number): number | null {
+  if (answeredCount < 200)  return 200;
+  if (answeredCount < 500)  return 500;
+  if (answeredCount < 1000) return 1000;
+  if (answeredCount < 2000) return 2000;
+  if (answeredCount < 3000) return 3000;
+  return null;
+}
+
+export function getAccuracyTier(answeredCount: number): AccuracyTier {
+  if (answeredCount < 200)  return 'baseline';
+  if (answeredCount < 500)  return 'stable';
+  if (answeredCount < 1000) return 'high';
+  return 'detailed';
+}
+
 // ── Main function ─────────────────────────────────────────────────────────────
 //
 // Cumulative: the estimate and zones are computed from profile.answers[] (all

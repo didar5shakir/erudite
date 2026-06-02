@@ -229,6 +229,38 @@ console.log('\n── L: empty profile safety ──');
   check('L3: empty → preliminary', r.isPreliminary===true);
 }
 
+// mirror of getContinueMilestone / getAccuracyTier
+function getContinueMilestone(n){if(n<200)return 200;if(n<500)return 500;if(n<1000)return 1000;if(n<2000)return 2000;if(n<3000)return 3000;return null;}
+function getAccuracyTier(n){if(n<200)return 'baseline';if(n<500)return 'stable';if(n<1000)return 'high';return 'detailed';}
+
+console.log('\n── P: continue milestones ──');
+{
+  check('P1: 100 → 200',  getContinueMilestone(100)===200);
+  check('P2: 199 → 200',  getContinueMilestone(199)===200);
+  check('P3: 200 → 500',  getContinueMilestone(200)===500);
+  check('P4: 499 → 500',  getContinueMilestone(499)===500);
+  check('P5: 500 → 1000', getContinueMilestone(500)===1000);
+  check('P6: 999 → 1000', getContinueMilestone(999)===1000);
+  check('P7: 1000 → 2000',getContinueMilestone(1000)===2000);
+  check('P8: 1999 → 2000',getContinueMilestone(1999)===2000);
+  check('P9: 2000 → 3000',getContinueMilestone(2000)===3000);
+  check('P10: 2999 → 3000',getContinueMilestone(2999)===3000);
+  check('P11: 3000 → null',getContinueMilestone(3000)===null);
+  check('P12: 5000 → null',getContinueMilestone(5000)===null);
+}
+
+console.log('\n── Q: accuracy tiers ──');
+{
+  check('Q1: 100 → baseline', getAccuracyTier(100)==='baseline');
+  check('Q2: 199 → baseline', getAccuracyTier(199)==='baseline');
+  check('Q3: 200 → stable',   getAccuracyTier(200)==='stable');
+  check('Q4: 499 → stable',   getAccuracyTier(499)==='stable');
+  check('Q5: 500 → high',     getAccuracyTier(500)==='high');
+  check('Q6: 999 → high',     getAccuracyTier(999)==='high');
+  check('Q7: 1000 → detailed',getAccuracyTier(1000)==='detailed');
+  check('Q8: 5000 → detailed',getAccuracyTier(5000)==='detailed');
+}
+
 console.log('\n── M: regional seed excluded from bucket estimate, kept in zones ──');
 {
   const recs=[];

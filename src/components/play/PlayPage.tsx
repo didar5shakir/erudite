@@ -13,6 +13,7 @@ import { updateAdaptiveProfile } from '@/lib/play/adaptive-profile';
 import {
   getOrCreateAdaptiveProfile,
   saveAdaptiveProfile,
+  clearAdaptiveProfile,
 } from '@/lib/play/adaptive-storage';
 import {
   CALIB_SIZE,
@@ -32,19 +33,7 @@ interface Labels {
   know: string;
   heard: string;
   dont_know: string;
-  result_title: string;
-  play_again: string;
   loading: string;
-  result_estimate_pre: string;
-  result_estimate_post: string;
-  result_range_label: string;
-  result_level_label: string;
-  result_strong_title: string;
-  result_weak_title: string;
-  result_strong_empty: string;
-  result_weak_empty: string;
-  result_disclaimer: string;
-  result_preliminary: string;
 }
 
 interface PlayPageProps {
@@ -189,8 +178,19 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
     startedAt.current = now;
   }
 
-  function handlePlayAgain() {
+  // Continue: start a fresh 100-card session; cumulative adaptive profile is PRESERVED.
+  function handleContinue() {
     clearSession(locale, region);
+    const fresh = createNewSession(locale, initialDeck, region);
+    saveSession(fresh, region);
+    setSession(fresh);
+    startedAt.current = Date.now();
+  }
+
+  // Start new test: clear session AND cumulative profile (confirmed in PlayResult).
+  function handleReset() {
+    clearSession(locale, region);
+    clearAdaptiveProfile();
     const fresh = createNewSession(locale, initialDeck, region);
     saveSession(fresh, region);
     setSession(fresh);
@@ -213,23 +213,8 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
         <PlayResult
           estimate={estimate}
           locale={locale}
-          labels={{
-            know:                labels.know,
-            heard:               labels.heard,
-            dont_know:           labels.dont_know,
-            result_estimate_pre: labels.result_estimate_pre,
-            result_estimate_post:labels.result_estimate_post,
-            result_range_label:  labels.result_range_label,
-            result_level_label:  labels.result_level_label,
-            result_strong_title: labels.result_strong_title,
-            result_weak_title:   labels.result_weak_title,
-            result_strong_empty: labels.result_strong_empty,
-            result_weak_empty:   labels.result_weak_empty,
-            result_disclaimer:   labels.result_disclaimer,
-            result_preliminary:  labels.result_preliminary,
-          }}
-          playAgainLabel={labels.play_again}
-          onPlayAgain={handlePlayAgain}
+          onContinue={handleContinue}
+          onReset={handleReset}
         />
       </div>
     );

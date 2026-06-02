@@ -1,152 +1,189 @@
 'use client';
 
-import type { ResultEstimate } from '@/lib/play/result-estimate';
+import { useState } from 'react';
+import { useTranslations } from 'next-intl';
+
+import type { ResultEstimate, ZoneStats, LevelLabel } from '@/lib/play/result-estimate';
+import { getContinueMilestone, getAccuracyTier } from '@/lib/play/result-estimate';
 import { formatZoneLabel } from '@/lib/play/localized-labels';
 
-interface ResultLabels {
-  know: string;
-  heard: string;
-  dont_know: string;
-  result_estimate_pre: string;
-  result_estimate_post: string;
-  result_range_label: string;
-  result_level_label: string;
-  result_strong_title: string;
-  result_weak_title: string;
-  result_strong_empty: string;
-  result_weak_empty: string;
-  result_disclaimer: string;
-  result_preliminary: string;
-}
-
 interface PlayResultProps {
-  estimate: ResultEstimate;
-  locale: string;
-  labels: ResultLabels;
-  playAgainLabel: string;
-  onPlayAgain: () => void;
+  estimate:   ResultEstimate;
+  locale:     string;
+  onContinue: () => void;
+  onReset:    () => void;
 }
 
 function formatNumber(n: number): string {
-  // Non-breaking space as thousands separator
-  return n.toLocaleString('ru-RU').replace(/\s/g, ' ');
+  return n.toLocaleString('ru-RU').replace(/\s/g, ' ');
 }
 
-export default function PlayResult({
-  estimate,
-  locale,
-  labels,
-  playAgainLabel,
-  onPlayAgain,
-}: PlayResultProps) {
+const LEVEL_KEY: Record<LevelLabel, string> = {
+  beginner: 'level_beginner',
+  casual:   'level_casual',
+  good:     'level_good',
+  strong:   'level_strong',
+  erudite:  'level_erudite',
+  master:   'level_master',
+};
+
+const ACCURACY_KEY = {
+  baseline: 'accuracy_baseline',
+  stable:   'accuracy_stable',
+  high:     'accuracy_high',
+  detailed: 'accuracy_detailed',
+} as const;
+
+export default function PlayResult({ estimate, locale, onContinue, onReset }: PlayResultProps) {
+  const t = useTranslations('play');
+  const [showDetails, setShowDetails] = useState(false);
+
   const {
-    publicEstimate,
-    rangeLow,
-    rangeHigh,
-    levelLabel,
-    knowCount,
-    heardCount,
-    dontKnowCount,
-    answeredCount,
-    strongZones,
-    weakZones,
-    isPreliminary,
+    publicEstimate, rangeLow, rangeHigh, levelLabel,
+    universeTotal, answeredCount,
+    strongZones, mediumZones, weakZones, bucketStats,
   } = estimate;
 
-  const disclaimerText = labels.result_disclaimer.replace('{count}', String(answeredCount));
+  const milestone = getContinueMilestone(answeredCount);
+  const accuracyTier = getAccuracyTier(answeredCount);
+
+  function handleReset() {
+    if (typeof window === 'undefined' || window.confirm(t('start_new_confirm'))) onReset();
+  }
+
+  function handleShare() {
+    const text = t('share_text', {
+      estimate: formatNumber(publicEstimate),
+      total:    formatNumber(universeTotal),
+      level:    t(LEVEL_KEY[levelLabel]),
+    });
+    const url = typeof window !== 'undefined' ? window.location.href : '';
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      navigator.share({ text, url }).catch(() => { /* user cancelled */ });
+    } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(`${text} ${url}`.trim()).catch(() => { /* noop */ });
+    }
+  }
+
+  function renderZones(zones: ZoneStats[], emptyKey: string, color: string) {
+    if (zones.length === 0) {
+      return <p className="text-neutral-500 text-sm">{t(emptyKey)}</p>;
+    }
+    return (
+      <div className="flex flex-wrap gap-2">
+        {zones.map(z => (
+          <span key={`${z.axis}:${z.tag}`} className={`rounded-full px-3 py-1 text-xs ${color}`}>
+            {formatZoneLabel(z.axis, z.tag, locale)}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  const buckets: Array<['easy' | 'medium' | 'hard', string]> = [
+    ['easy',   'details_easy'],
+    ['medium', 'details_medium'],
+    ['hard',   'details_hard'],
+  ];
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-4 text-center">
 
       {/* Estimate headline */}
       <div className="bg-neutral-900 rounded-xl shadow-lg px-8 py-7 space-y-1">
-        <p className="text-neutral-400 text-sm">{labels.result_estimate_pre}</p>
+        <p className="text-neutral-400 text-sm">{t('result_estimate_pre')}</p>
         <p className="text-6xl font-serif font-semibold text-white leading-tight">
           {formatNumber(publicEstimate)}
         </p>
-        <p className="text-neutral-400 text-sm">{labels.result_estimate_post}</p>
+        <p className="text-neutral-400 text-sm">
+          {t('result_estimate_post', { total: formatNumber(universeTotal) })}
+        </p>
 
         <div className="pt-3 space-y-1 text-sm">
           <p className="text-neutral-500">
-            {labels.result_range_label}{' '}
+            {t('result_range_label')}{' '}
             <span className="text-neutral-300">
               {formatNumber(rangeLow)}&nbsp;–&nbsp;{formatNumber(rangeHigh)}
             </span>
           </p>
           <p className="text-neutral-500">
-            {labels.result_level_label}{' '}
-            <span className="text-neutral-200 font-semibold capitalize">{levelLabel}</span>
+            {t('result_level_label')}{' '}
+            <span className="text-neutral-200 font-semibold">{t(LEVEL_KEY[levelLabel])}</span>
           </p>
         </div>
-
-        {isPreliminary && (
-          <p className="pt-2 text-xs text-amber-500">{labels.result_preliminary}</p>
-        )}
       </div>
 
-      {/* Answer breakdown */}
-      <div className="bg-neutral-900 rounded-xl px-8 py-5 space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-neutral-400">{labels.know}</span>
-          <span className="text-neutral-200">{knowCount}</span>
+      {/* Accuracy note */}
+      <p className="text-neutral-400 text-xs px-2">
+        {t(ACCURACY_KEY[accuracyTier], { count: answeredCount })}
+      </p>
+
+      {/* Profile zones */}
+      <div className="bg-neutral-900 rounded-xl px-8 py-5 text-left space-y-4">
+        <div className="space-y-2">
+          <p className="text-neutral-300 font-semibold text-sm">{t('result_strong_title')}</p>
+          {renderZones(strongZones, 'result_strong_empty', 'bg-emerald-900/60 text-emerald-300')}
         </div>
-        <div className="flex justify-between">
-          <span className="text-neutral-400">{labels.heard}</span>
-          <span className="text-neutral-200">{heardCount}</span>
+        <div className="space-y-2">
+          <p className="text-neutral-300 font-semibold text-sm">{t('result_medium_title')}</p>
+          {renderZones(mediumZones, 'result_medium_empty', 'bg-amber-900/50 text-amber-300')}
         </div>
-        <div className="flex justify-between">
-          <span className="text-neutral-400">{labels.dont_know}</span>
-          <span className="text-neutral-200">{dontKnowCount}</span>
+        <div className="space-y-2">
+          <p className="text-neutral-300 font-semibold text-sm">{t('result_weak_title')}</p>
+          {renderZones(weakZones, 'result_weak_empty', 'bg-rose-900/60 text-rose-300')}
         </div>
       </div>
 
-      {/* Strong zones */}
-      <div className="bg-neutral-900 rounded-xl px-8 py-5 text-left space-y-2">
-        <p className="text-neutral-300 font-semibold text-sm">{labels.result_strong_title}</p>
-        {strongZones.length === 0 ? (
-          <p className="text-neutral-500 text-sm">{labels.result_strong_empty}</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {strongZones.map(z => (
-              <span
-                key={`${z.axis}:${z.tag}`}
-                className="rounded-full bg-emerald-900/60 px-3 py-1 text-xs text-emerald-300"
-              >
-                {formatZoneLabel(z.axis, z.tag, locale)}
-              </span>
-            ))}
+      {/* View details (difficulty breakdown) */}
+      <div className="bg-neutral-900 rounded-xl px-8 py-4 text-left">
+        <button
+          onClick={() => setShowDetails(v => !v)}
+          className="w-full flex items-center justify-between text-neutral-300 text-sm font-medium"
+        >
+          <span>{t('details_title')}</span>
+          <span className="text-neutral-500">{showDetails ? t('btn_hide_details') : t('btn_view_details')}</span>
+        </button>
+        {showDetails && (
+          <div className="pt-3 space-y-2 text-sm">
+            {buckets.map(([b, labelKey]) => {
+              const s = bucketStats[b];
+              const pct = Math.round(s.scoreRate * 100);
+              return (
+                <div key={b} className="flex justify-between">
+                  <span className="text-neutral-400">{t(labelKey)}</span>
+                  <span className="text-neutral-300">
+                    {s.usedDefault ? '—' : `${s.count}`}&nbsp;·&nbsp;{pct}%
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Weak zones */}
-      <div className="bg-neutral-900 rounded-xl px-8 py-5 text-left space-y-2">
-        <p className="text-neutral-300 font-semibold text-sm">{labels.result_weak_title}</p>
-        {weakZones.length === 0 ? (
-          <p className="text-neutral-500 text-sm">{labels.result_weak_empty}</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {weakZones.map(z => (
-              <span
-                key={`${z.axis}:${z.tag}`}
-                className="rounded-full bg-rose-900/60 px-3 py-1 text-xs text-rose-300"
-              >
-                {formatZoneLabel(z.axis, z.tag, locale)}
-              </span>
-            ))}
-          </div>
-        )}
+      {/* Actions */}
+      <div className="flex flex-col gap-3">
+        <button
+          onClick={onContinue}
+          className="w-full py-4 rounded-xl bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 text-white font-semibold text-lg transition-colors"
+        >
+          {milestone === null
+            ? t('continue_more')
+            : t('continue_to', { target: formatNumber(milestone) })}
+        </button>
+        <button
+          onClick={handleShare}
+          className="w-full py-3 rounded-xl bg-neutral-700 hover:bg-neutral-600 active:bg-neutral-800 text-white font-medium transition-colors"
+        >
+          {t('btn_share')}
+        </button>
+        <button
+          onClick={handleReset}
+          className="w-full py-3 rounded-xl border border-neutral-700 text-neutral-400 hover:text-rose-300 hover:border-rose-800 active:bg-neutral-900 font-medium transition-colors"
+        >
+          {t('btn_start_new')}
+        </button>
       </div>
-
-      {/* Disclaimer */}
-      <p className="text-neutral-600 text-xs px-2">{disclaimerText}</p>
-
-      <button
-        onClick={onPlayAgain}
-        className="w-full py-4 rounded-xl bg-neutral-700 hover:bg-neutral-600 active:bg-neutral-800 text-white font-semibold text-lg transition-colors"
-      >
-        {playAgainLabel}
-      </button>
     </div>
   );
 }
