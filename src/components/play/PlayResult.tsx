@@ -12,6 +12,7 @@ interface PlayResultProps {
   locale:     string;
   onContinue: () => void;
   onReset:    () => void;
+  onExport:   () => void;
 }
 
 function formatNumber(n: number): string {
@@ -34,28 +35,36 @@ const ACCURACY_KEY = {
   detailed: 'accuracy_detailed',
 } as const;
 
-export default function PlayResult({ estimate, locale, onContinue, onReset }: PlayResultProps) {
+export default function PlayResult({ estimate, locale, onContinue, onReset, onExport }: PlayResultProps) {
   const t = useTranslations('play');
   const [showDetails, setShowDetails] = useState(false);
 
   const {
     publicEstimate, rangeLow, rangeHigh, levelLabel,
-    universeTotal, answeredCount,
-    strongZones, mediumZones, weakZones, bucketStats,
+    universeTotal, answeredCount, knowCount, heardCount, dontKnowCount,
+    strongZones, strongIsFallback, topZones, mediumZones, weakZones, bucketStats,
   } = estimate;
 
   const milestone = getContinueMilestone(answeredCount);
   const accuracyTier = getAccuracyTier(answeredCount);
+
+  // Strong section: strict strong zones, or top-by-rate fallback so it's never empty.
+  const displayStrong = strongIsFallback ? topZones : strongZones;
+  const strongTitle   = strongIsFallback ? t('result_strong_fallback_title') : t('result_strong_title');
 
   function handleReset() {
     if (typeof window === 'undefined' || window.confirm(t('start_new_confirm'))) onReset();
   }
 
   function handleShare() {
+    const zoneStr = displayStrong.slice(0, 5)
+      .map(z => formatZoneLabel(z.axis, z.tag, locale)).join(', ') || '—';
     const text = t('share_text', {
       estimate: formatNumber(publicEstimate),
       total:    formatNumber(universeTotal),
       level:    t(LEVEL_KEY[levelLabel]),
+      count:    answeredCount,
+      zones:    zoneStr,
     });
     const url = typeof window !== 'undefined' ? window.location.href : '';
     if (typeof navigator !== 'undefined' && navigator.share) {
@@ -118,11 +127,19 @@ export default function PlayResult({ estimate, locale, onContinue, onReset }: Pl
         {t(ACCURACY_KEY[accuracyTier], { count: answeredCount })}
       </p>
 
+      {/* Progress / answer breakdown */}
+      <div className="bg-neutral-900 rounded-xl px-8 py-5 space-y-2 text-sm">
+        <p className="text-neutral-300 font-semibold">{t('progress_answered', { count: answeredCount })}</p>
+        <div className="flex justify-between"><span className="text-neutral-400">{t('know')}</span><span className="text-emerald-300">{knowCount}</span></div>
+        <div className="flex justify-between"><span className="text-neutral-400">{t('heard')}</span><span className="text-amber-300">{heardCount}</span></div>
+        <div className="flex justify-between"><span className="text-neutral-400">{t('dont_know')}</span><span className="text-rose-300">{dontKnowCount}</span></div>
+      </div>
+
       {/* Profile zones */}
       <div className="bg-neutral-900 rounded-xl px-8 py-5 text-left space-y-4">
         <div className="space-y-2">
-          <p className="text-neutral-300 font-semibold text-sm">{t('result_strong_title')}</p>
-          {renderZones(strongZones, 'result_strong_empty', 'bg-emerald-900/60 text-emerald-300')}
+          <p className="text-neutral-300 font-semibold text-sm">{strongTitle}</p>
+          {renderZones(displayStrong, 'result_strong_empty', 'bg-emerald-900/60 text-emerald-300')}
         </div>
         <div className="space-y-2">
           <p className="text-neutral-300 font-semibold text-sm">{t('result_medium_title')}</p>
@@ -149,10 +166,10 @@ export default function PlayResult({ estimate, locale, onContinue, onReset }: Pl
               const s = bucketStats[b];
               const pct = Math.round(s.scoreRate * 100);
               return (
-                <div key={b} className="flex justify-between">
+                <div key={b} className="flex justify-between gap-3">
                   <span className="text-neutral-400">{t(labelKey)}</span>
-                  <span className="text-neutral-300">
-                    {s.usedDefault ? '—' : `${s.count}`}&nbsp;·&nbsp;{pct}%
+                  <span className="text-neutral-300 text-right">
+                    {s.usedDefault ? '—' : t('details_row', { count: s.count, rate: pct })}
                   </span>
                 </div>
               );
@@ -176,6 +193,12 @@ export default function PlayResult({ estimate, locale, onContinue, onReset }: Pl
           className="w-full py-3 rounded-xl bg-neutral-700 hover:bg-neutral-600 active:bg-neutral-800 text-white font-medium transition-colors"
         >
           {t('btn_share')}
+        </button>
+        <button
+          onClick={onExport}
+          className="w-full py-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 active:bg-neutral-900 text-neutral-300 font-medium transition-colors"
+        >
+          {t('btn_export')}
         </button>
         <button
           onClick={handleReset}

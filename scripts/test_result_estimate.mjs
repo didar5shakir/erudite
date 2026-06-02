@@ -70,10 +70,12 @@ function calculateResultEstimate(profile){
   const strongZones=selectStrongBalanced(dedup(eligible.filter(z=>z.rate>=STRONG)));
   const mediumZones=dedup(eligible.filter(z=>z.rate>WEAK&&z.rate<STRONG).sort(byRate)).slice(0,ZONE_MAX);
   const weakZones=dedup(eligible.filter(z=>z.rate<=WEAK).sort((a,b)=>a.rate-b.rate||b.total-a.total)).slice(0,ZONE_MAX);
+  const topZones=dedup([...eligible].sort(byRate)).slice(0,ZONE_MAX);
+  const strongIsFallback=strongZones.length===0;
 
   return {answeredCount,knowCount,heardCount,dontKnowCount,scoreSum,scorePercent,universeTotal:UNIVERSE_TOTAL,
     calibrationEstimate,publicEstimate,rangeLow,rangeHigh,rangePercent:rp,levelLabel,bucketStats,usedDefaultBuckets,
-    strongZones,mediumZones,weakZones,isPreliminary};
+    strongZones,strongIsFallback,topZones,mediumZones,weakZones,isPreliminary};
 }
 
 // ── profile factory ─────────────────────────────────────────────────────────
@@ -230,23 +232,31 @@ console.log('\n── L: empty profile safety ──');
 }
 
 // mirror of getContinueMilestone / getAccuracyTier
-function getContinueMilestone(n){if(n<200)return 200;if(n<500)return 500;if(n<1000)return 1000;if(n<2000)return 2000;if(n<3000)return 3000;return null;}
+function getContinueMilestone(n){if(n<200)return 200;if(n<300)return 300;if(n<400)return 400;if(n<500)return 500;if(n<750)return 750;if(n<1000)return 1000;if(n<1500)return 1500;if(n<2000)return 2000;if(n<3000)return 3000;return null;}
 function getAccuracyTier(n){if(n<200)return 'baseline';if(n<500)return 'stable';if(n<1000)return 'high';return 'detailed';}
 
-console.log('\n── P: continue milestones ──');
+console.log('\n── P: continue milestones (fine-grained) ──');
 {
-  check('P1: 100 → 200',  getContinueMilestone(100)===200);
-  check('P2: 199 → 200',  getContinueMilestone(199)===200);
-  check('P3: 200 → 500',  getContinueMilestone(200)===500);
-  check('P4: 499 → 500',  getContinueMilestone(499)===500);
-  check('P5: 500 → 1000', getContinueMilestone(500)===1000);
-  check('P6: 999 → 1000', getContinueMilestone(999)===1000);
-  check('P7: 1000 → 2000',getContinueMilestone(1000)===2000);
-  check('P8: 1999 → 2000',getContinueMilestone(1999)===2000);
-  check('P9: 2000 → 3000',getContinueMilestone(2000)===3000);
-  check('P10: 2999 → 3000',getContinueMilestone(2999)===3000);
-  check('P11: 3000 → null',getContinueMilestone(3000)===null);
-  check('P12: 5000 → null',getContinueMilestone(5000)===null);
+  check('P1: 100 → 200',   getContinueMilestone(100)===200);
+  check('P2: 199 → 200',   getContinueMilestone(199)===200);
+  check('P3: 200 → 300',   getContinueMilestone(200)===300);
+  check('P4: 299 → 300',   getContinueMilestone(299)===300);
+  check('P5: 300 → 400',   getContinueMilestone(300)===400);
+  check('P6: 399 → 400',   getContinueMilestone(399)===400);
+  check('P7: 400 → 500',   getContinueMilestone(400)===500);
+  check('P8: 499 → 500',   getContinueMilestone(499)===500);
+  check('P9: 500 → 750',   getContinueMilestone(500)===750);
+  check('P10: 749 → 750',  getContinueMilestone(749)===750);
+  check('P11: 750 → 1000', getContinueMilestone(750)===1000);
+  check('P12: 999 → 1000', getContinueMilestone(999)===1000);
+  check('P13: 1000 → 1500',getContinueMilestone(1000)===1500);
+  check('P14: 1499 → 1500',getContinueMilestone(1499)===1500);
+  check('P15: 1500 → 2000',getContinueMilestone(1500)===2000);
+  check('P16: 1999 → 2000',getContinueMilestone(1999)===2000);
+  check('P17: 2000 → 3000',getContinueMilestone(2000)===3000);
+  check('P18: 2999 → 3000',getContinueMilestone(2999)===3000);
+  check('P19: 3000 → null',getContinueMilestone(3000)===null);
+  check('P20: 5000 → null',getContinueMilestone(5000)===null);
 }
 
 console.log('\n── Q: accuracy tiers ──');
@@ -259,6 +269,29 @@ console.log('\n── Q: accuracy tiers ──');
   check('Q6: 999 → high',     getAccuracyTier(999)==='high');
   check('Q7: 1000 → detailed',getAccuracyTier(1000)==='detailed');
   check('Q8: 5000 → detailed',getAccuracyTier(5000)==='detailed');
+}
+
+console.log('\n── R: strong-zone fallback (never empty when zones exist) ──');
+{
+  // All zones below 0.7 → strict strong empty; fallback topZones must fill in.
+  const recs=[];
+  // 6 distinct subdomains, each 6 answers at rate ~0.5 (3 know, 3 dont_know)
+  const subs=['boxing','tennis','football','chess','cycling','skating'];
+  for(const s of subs){for(let i=0;i<3;i++)recs.push(rec(1,'medium',{domain:'sports',subdomain:s}));for(let i=0;i<3;i++)recs.push(rec(0,'medium',{domain:'sports',subdomain:s}));}
+  const r=calculateResultEstimate(makeProfile(recs));
+  check('R1: strict strongZones empty (all rate 0.5)', r.strongZones.length===0);
+  check('R2: strongIsFallback = true', r.strongIsFallback===true);
+  check('R3: topZones non-empty (fallback fills section)', r.topZones.length>0);
+  check('R4: topZones ≤ 5', r.topZones.length<=5);
+}
+
+{
+  // Clear strength present → strict strong non-empty, no fallback.
+  const recs=[];
+  for(let i=0;i<8;i++)recs.push(rec(1,'medium',{domain:'sports',subdomain:'boxing'}));
+  for(let i=0;i<6;i++)recs.push(rec(0,'hard',{domain:'science'}));
+  const r=calculateResultEstimate(makeProfile(recs));
+  check('R5: strict strong present → strongIsFallback false', r.strongIsFallback===false && r.strongZones.length>0);
 }
 
 console.log('\n── M: regional seed excluded from bucket estimate, kept in zones ──');

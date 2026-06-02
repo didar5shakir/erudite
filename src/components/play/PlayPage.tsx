@@ -197,6 +197,30 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
     startedAt.current = Date.now();
   }
 
+  // Export: copy all cumulative answers (available fields only) as JSON to clipboard.
+  // name/displayName + birthyear are NOT stored in AnswerRecord — see report.
+  function handleExport() {
+    const profile = getOrCreateAdaptiveProfile();
+    const rows = profile.answers.map(a => ({
+      qid:            a.qid,
+      answer:         a.answer,
+      score:          a.score,
+      difficulty:     a.difficultyBucket,
+      domain:         a.domain,
+      subdomain:      a.subdomain,
+      occupation:     a.occupation,
+      country:        a.country,
+      macroRegion:    a.macroRegion,
+      era:            a.era,
+      isRegionalSeed: a.isRegionalSeed === true,
+      timestamp:      a.timestamp,
+    }));
+    const json = JSON.stringify(rows, null, 2);
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(json).catch(() => { /* noop */ });
+    }
+  }
+
   if (!session) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950">
@@ -215,6 +239,7 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
           locale={locale}
           onContinue={handleContinue}
           onReset={handleReset}
+          onExport={handleExport}
         />
       </div>
     );

@@ -46,6 +46,8 @@ export interface ResultEstimate {
   usedDefaultBuckets:  string[];
 
   strongZones:         ZoneStats[];
+  strongIsFallback:    boolean;     // true ⇒ strongZones empty, UI shows topZones + fallback title
+  topZones:            ZoneStats[]; // top eligible by rate, regardless of threshold (fallback pool)
   mediumZones:         ZoneStats[];
   weakZones:           ZoneStats[];
 
@@ -129,8 +131,12 @@ export type AccuracyTier = 'baseline' | 'stable' | 'high' | 'detailed';
 // Returns null past 3000 (open-ended "continue further").
 export function getContinueMilestone(answeredCount: number): number | null {
   if (answeredCount < 200)  return 200;
+  if (answeredCount < 300)  return 300;
+  if (answeredCount < 400)  return 400;
   if (answeredCount < 500)  return 500;
+  if (answeredCount < 750)  return 750;
   if (answeredCount < 1000) return 1000;
+  if (answeredCount < 1500) return 1500;
   if (answeredCount < 2000) return 2000;
   if (answeredCount < 3000) return 3000;
   return null;
@@ -282,6 +288,12 @@ export function calculateResultEstimate(profile: AdaptiveProfile): ResultEstimat
       .sort((a, b) => a.rate - b.rate || b.total - a.total),
   ).slice(0, ZONE_MAX);
 
+  // Fallback pool: top eligible zones by rate regardless of the 0.7 threshold.
+  // When strict strongZones is empty (common before a clear strength forms), the UI
+  // shows these under a "most pronounced areas" title so the section is never empty.
+  const topZones = dedup([...eligible].sort(byRate)).slice(0, ZONE_MAX);
+  const strongIsFallback = strongZones.length === 0;
+
   return {
     answeredCount,
     knowCount,
@@ -299,6 +311,8 @@ export function calculateResultEstimate(profile: AdaptiveProfile): ResultEstimat
     bucketStats,
     usedDefaultBuckets,
     strongZones,
+    strongIsFallback,
+    topZones,
     mediumZones,
     weakZones,
     isPreliminary,
