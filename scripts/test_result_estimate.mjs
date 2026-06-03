@@ -72,10 +72,11 @@ function calculateResultEstimate(profile){
   const weakZones=dedup(eligible.filter(z=>z.rate<=WEAK).sort((a,b)=>a.rate-b.rate||b.total-a.total)).slice(0,ZONE_MAX);
   const topZones=dedup([...eligible].sort(byRate)).slice(0,ZONE_MAX);
   const strongIsFallback=strongZones.length===0;
+  const displayStrongZones=(()=>{const pool=dedup(strongZones.length?[...strongZones,...mediumZones]:[...topZones]);const out=[];let geo=0;for(const z of pool){if(out.length>=ZONE_MAX)break;const isGeo=ZONE_CATEGORY[z.axis]==='geo';if(isGeo&&geo>=STRONG_MAX_GEO)continue;out.push(z);if(isGeo)geo++;}return out;})();
 
   return {answeredCount,knowCount,heardCount,dontKnowCount,scoreSum,scorePercent,universeTotal:UNIVERSE_TOTAL,
     calibrationEstimate,publicEstimate,rangeLow,rangeHigh,rangePercent:rp,levelLabel,bucketStats,usedDefaultBuckets,
-    strongZones,strongIsFallback,topZones,mediumZones,weakZones,isPreliminary};
+    strongZones,strongIsFallback,topZones,displayStrongZones,mediumZones,weakZones,isPreliminary};
 }
 
 // ── profile factory ─────────────────────────────────────────────────────────
@@ -292,6 +293,24 @@ console.log('\n── R: strong-zone fallback (never empty when zones exist) ─
   for(let i=0;i<6;i++)recs.push(rec(0,'hard',{domain:'science'}));
   const r=calculateResultEstimate(makeProfile(recs));
   check('R5: strict strong present → strongIsFallback false', r.strongIsFallback===false && r.strongZones.length>0);
+}
+
+console.log('\n── S: top-section fill (≤5, ≤2 geo, strong→medium) ──');
+{
+  // 2 strong topics + many medium topics + several strong geo → top section should be
+  // 5 items with at most 2 geo, filled from medium when strict strong < 5.
+  const recs=[];
+  // strong topic: boxing (rate 1.0)
+  for(let i=0;i<8;i++)recs.push(rec(1,'medium',{domain:'sports',subdomain:'boxing'}));
+  // strong geo: 3 countries at rate 1.0 (only 2 may appear)
+  for(const c of ['France','Brazil','Spain'])for(let i=0;i<8;i++)recs.push(rec(1,'hard',{country:c,macroRegion:'western_europe'}));
+  // medium topics to fill: tennis, chess, golf (~0.5)
+  for(const s of ['tennis','chess','golf']){for(let i=0;i<3;i++)recs.push(rec(1,'medium',{domain:'sports',subdomain:s}));for(let i=0;i<3;i++)recs.push(rec(0,'medium',{domain:'sports',subdomain:s}));}
+  const r=calculateResultEstimate(makeProfile(recs));
+  const geo=r.displayStrongZones.filter(z=>z.axis==='country'||z.axis==='macroRegion').length;
+  check('S1: top section reaches 5 zones', r.displayStrongZones.length===5, `got ${r.displayStrongZones.length}`);
+  check('S2: at most 2 geo zones in top section', geo<=2, `geo=${geo}`);
+  check('S3: top section has thematic zones', r.displayStrongZones.some(z=>z.axis==='subdomain'||z.axis==='domain'));
 }
 
 console.log('\n── M: regional seed excluded from bucket estimate, kept in zones ──');

@@ -48,6 +48,7 @@ export interface ResultEstimate {
   strongZones:         ZoneStats[];
   strongIsFallback:    boolean;     // true ⇒ strongZones empty, UI shows topZones + fallback title
   topZones:            ZoneStats[]; // top eligible by rate, regardless of threshold (fallback pool)
+  displayStrongZones:  ZoneStats[]; // top-section list (≤5, ≤2 geo, strong→medium fill)
   mediumZones:         ZoneStats[];
   weakZones:           ZoneStats[];
 
@@ -294,6 +295,24 @@ export function calculateResultEstimate(profile: AdaptiveProfile): ResultEstimat
   const topZones = dedup([...eligible].sort(byRate)).slice(0, ZONE_MAX);
   const strongIsFallback = strongZones.length === 0;
 
+  // Top-section display list (presentation only — no score change):
+  // strict strong first, then fill from highest-rated medium zones up to ZONE_MAX,
+  // capping geography at STRONG_MAX_GEO so thematic zones are preferred. When there
+  // are no strict strong zones, fall back to top-by-rate zones under a softer title.
+  const displayStrongZones = (() => {
+    const pool = dedup(strongZones.length ? [...strongZones, ...mediumZones] : [...topZones]);
+    const out: ZoneStats[] = [];
+    let geo = 0;
+    for (const z of pool) {
+      if (out.length >= ZONE_MAX) break;
+      const isGeo = ZONE_CATEGORY[z.axis] === 'geo';
+      if (isGeo && geo >= STRONG_MAX_GEO) continue;
+      out.push(z);
+      if (isGeo) geo++;
+    }
+    return out;
+  })();
+
   return {
     answeredCount,
     knowCount,
@@ -313,6 +332,7 @@ export function calculateResultEstimate(profile: AdaptiveProfile): ResultEstimat
     strongZones,
     strongIsFallback,
     topZones,
+    displayStrongZones,
     mediumZones,
     weakZones,
     isPreliminary,

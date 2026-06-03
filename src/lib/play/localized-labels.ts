@@ -306,6 +306,33 @@ const SUBDOMAIN_ZONE_LABELS: Record<string, L3> = {
   basketball:   { ru: 'Баскетбол',   kk: 'Баскетбол',    en: 'Basketball' },
   motorsport:   { ru: 'Автоспорт',   kk: 'Автоспорт',    en: 'Motorsport' },
   chess:        { ru: 'Шахматы',     kk: 'Шахмат',       en: 'Chess' },
+  composer:        { ru: 'Композиторы',       kk: 'Композиторлар',      en: 'Composers' },
+  athletics:       { ru: 'Лёгкая атлетика',   kk: 'Жеңіл атлетика',     en: 'Athletics' },
+  wrestling:       { ru: 'Борьба',            kk: 'Күрес',              en: 'Wrestling' },
+  martial_arts:    { ru: 'Единоборства',      kk: 'Жекпе-жек',          en: 'Martial Arts' },
+  skating:         { ru: 'Фигурное катание',  kk: 'Мәнерлеп сырғанау',  en: 'Figure Skating' },
+  cycling:         { ru: 'Велоспорт',         kk: 'Велоспорт',          en: 'Cycling' },
+  hockey:          { ru: 'Хоккей',            kk: 'Хоккей',             en: 'Hockey' },
+  baseball:        { ru: 'Бейсбол',           kk: 'Бейсбол',            en: 'Baseball' },
+  cricket:         { ru: 'Крикет',            kk: 'Крикет',             en: 'Cricket' },
+  skiing:          { ru: 'Лыжный спорт',      kk: 'Шаңғы спорты',       en: 'Skiing' },
+  mountaineering:  { ru: 'Альпинизм',         kk: 'Альпинизм',          en: 'Mountaineering' },
+  american_football: { ru: 'Американский футбол', kk: 'Америкалық футбол', en: 'American Football' },
+  golf:            { ru: 'Гольф',             kk: 'Гольф',              en: 'Golf' },
+  gymnastics:      { ru: 'Гимнастика',        kk: 'Гимнастика',         en: 'Gymnastics' },
+  swimming:        { ru: 'Плавание',          kk: 'Жүзу',               en: 'Swimming' },
+  snooker:         { ru: 'Снукер',            kk: 'Снукер',             en: 'Snooker' },
+  volleyball:      { ru: 'Волейбол',          kk: 'Волейбол',           en: 'Volleyball' },
+  sports_coaching: { ru: 'Тренеры',           kk: 'Жаттықтырушылар',    en: 'Coaches' },
+  celebrity:       { ru: 'Знаменитости',      kk: 'Атақты адамдар',     en: 'Celebrities' },
+  modeling:        { ru: 'Модели',            kk: 'Модельдер',          en: 'Models' },
+  tv_presenter:    { ru: 'Телеведущие',       kk: 'Телжүргізушілер',    en: 'TV Presenters' },
+  comedian:        { ru: 'Комики',            kk: 'Комиктер',           en: 'Comedians' },
+  dancer:          { ru: 'Танцоры',           kk: 'Бишілер',            en: 'Dancers' },
+  producer:        { ru: 'Продюсеры',         kk: 'Продюсерлер',        en: 'Producers' },
+  digital_creator: { ru: 'Блогеры',           kk: 'Блогерлер',          en: 'Digital Creators' },
+  magic:           { ru: 'Иллюзионисты',      kk: 'Иллюзионистер',      en: 'Magicians' },
+  adult:           { ru: 'Взрослый контент',  kk: 'Ересектерге арналған', en: 'Adult' },
 };
 
 const MACRO_REGION_ZONE_LABELS: Record<string, L3> = {
@@ -335,9 +362,19 @@ const ERA_ZONE_LABELS: Record<string, L3> = {
   digital_births:          { ru: 'Цифровое поколение',    kk: 'Цифрлық ұрпақ',        en: 'Digital Age' },
 };
 
+// Safety net: any tag not in a map is humanized (snake_case → "Snake Case")
+// so a raw internal slug like "martial_arts" can never reach the UI.
+function humanizeTag(tag: string): string {
+  return tag
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 function pickL3(map: Record<string, L3>, tag: string, locale: string): string {
   const l = map[tag];
-  if (!l) return tag;
+  if (!l) return humanizeTag(tag);
   if (locale === 'ru') return l.ru;
   if (locale === 'kk') return l.kk;
   return l.en;
