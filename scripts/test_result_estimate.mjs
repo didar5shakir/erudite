@@ -6,7 +6,9 @@
 // ── Mirror of result-estimate.ts ───────────────────────────────────────────────
 const UNIVERSE_TOTAL = 30000;
 const BUCKET_UNIVERSE      = { easy: 1500, medium: 4500, hard: 24000 };
-const DEFAULT_BUCKET_RATES = { easy: 0.7,  medium: 0.4,  hard: 0.2  };
+const DEFAULT_BUCKET_RATES = { easy: 0.7,  medium: 0.4,  hard: 0.15 };
+const SHRINKAGE_K          = { easy: 3,    medium: 5,    hard: 10   };
+const HARD_PRIOR_FACTOR    = 0.3, HARD_PRIOR_MIN = 0.02, HARD_PRIOR_MAX = 0.15;
 const LEVEL_THRESHOLDS = [[10000,'master'],[6000,'erudite'],[3000,'strong'],[1500,'good'],[500,'casual']];
 const ZONE_MIN_TOTAL=5, ZONE_MAX=5, STRONG=0.7, WEAK=0.4, STRONG_MAX_GEO=2;
 const ZONE_CATEGORY = { subdomain:'topic', domain:'topic', country:'geo', macroRegion:'geo', era:'time' };
@@ -23,17 +25,22 @@ function calculateResultEstimate(profile){
         scoreSum=profile.stats.scoreSum;
   const scorePercent = answeredCount>0 ? (scoreSum/answeredCount)*100 : 0;
 
-  const bucketData={};
-  for(const a of answers){if(a.isRegionalSeed===true)continue;const b=a.difficultyBucket??'unknown';if(!bucketData[b])bucketData[b]={sum:0,count:0};bucketData[b].sum+=a.score;bucketData[b].count++;}
+  const bucketData={}; let nsSum=0, nsCount=0;
+  for(const a of answers){if(a.isRegionalSeed===true)continue;nsSum+=a.score;nsCount++;const b=a.difficultyBucket??'unknown';if(!bucketData[b])bucketData[b]={sum:0,count:0};bucketData[b].sum+=a.score;bucketData[b].count++;}
+  const userObservedRate=nsCount>0?nsSum/nsCount:0;
+  const hardPrior=Math.min(HARD_PRIOR_MAX,Math.max(HARD_PRIOR_MIN,userObservedRate*HARD_PRIOR_FACTOR));
+  const layerDefault={easy:DEFAULT_BUCKET_RATES.easy,medium:DEFAULT_BUCKET_RATES.medium,hard:hardPrior};
 
   let rawEstimate=0; const usedDefaultBuckets=[]; const bucketStats={};
   for(const b of ['easy','medium','hard']){
     const d=bucketData[b]; const usedDefault=!(d&&d.count>0);
-    const scoreRate=usedDefault?DEFAULT_BUCKET_RATES[b]:d.sum/d.count;
     const count=usedDefault?0:d.count;
+    const scoreRate=usedDefault?layerDefault[b]:d.sum/d.count;
     bucketStats[b]={count,scoreRate,usedDefault};
     if(usedDefault)usedDefaultBuckets.push(b);
-    rawEstimate+=BUCKET_UNIVERSE[b]*scoreRate;
+    const k=SHRINKAGE_K[b];
+    const shrunk=(count*scoreRate+k*layerDefault[b])/(count+k);
+    rawEstimate+=BUCKET_UNIVERSE[b]*shrunk;
   }
   const calibrationEstimate=roundTo(rawEstimate,100);
   const publicEstimate=clamp(calibrationEstimate,0,UNIVERSE_TOTAL);
@@ -105,7 +112,8 @@ console.log('\n── A: 30k cap (estimate never exceeds 30000) ──');
   for(let i=0;i<40;i++)recs.push(rec(1,'medium'));
   for(let i=0;i<40;i++)recs.push(rec(1,'hard'));
   const r=calculateResultEstimate(makeProfile(recs));
-  check('A1: all-know publicEstimate = 30000', r.publicEstimate===30000, `got ${r.publicEstimate}`);
+  // Shrinkage keeps even all-know below the 30k cap at finite n (rates pulled toward defaults).
+  check('A1: all-know high but < cap (shrinkage)', r.publicEstimate>=24000 && r.publicEstimate<30000, `got ${r.publicEstimate}`);
   check('A2: publicEstimate ≤ 30000', r.publicEstimate<=30000, `got ${r.publicEstimate}`);
   check('A3: rangeHigh clamped ≤ 30000', r.rangeHigh<=30000, `got ${r.rangeHigh}`);
   check('A4: rangeLow ≥ 0', r.rangeLow>=0, `got ${r.rangeLow}`);
@@ -120,20 +128,22 @@ console.log('\n── B: rangeHigh clamp when public near cap ──');
   for(let i=0;i<20;i++)recs.push(rec(i<19?1:0,'hard')); // 19/20 = 0.95
   const r=calculateResultEstimate(makeProfile(recs)); // 60 answers → 20%
   check('B1: publicEstimate ≤ 30000', r.publicEstimate<=30000, `got ${r.publicEstimate}`);
-  check('B2: rangeHigh = 30000 (clamped from >30k)', r.rangeHigh===30000, `got ${r.rangeHigh}`);
+  check('B2: rangeHigh ≤ 30000 (cap holds)', r.rangeHigh<=30000, `got ${r.rangeHigh}`);
 }
 
-console.log('\n── C: zero knowledge ──');
+console.log('\n── C: zero knowledge → shrinkage floor ──');
 {
+  // Shrinkage pulls each layer toward its default by k/(n+k), so all-dont_know no longer
+  // yields exactly 0 — it leaves a small floor (~1300 of 30000 = ~4%). Documented & flagged.
   const recs=[];
   for(let i=0;i<30;i++)recs.push(rec(0,'easy'));
   for(let i=0;i<30;i++)recs.push(rec(0,'medium'));
   for(let i=0;i<30;i++)recs.push(rec(0,'hard'));
   const r=calculateResultEstimate(makeProfile(recs));
-  check('C1: publicEstimate = 0', r.publicEstimate===0, `got ${r.publicEstimate}`);
-  check('C2: rangeLow = 0', r.rangeLow===0, `got ${r.rangeLow}`);
-  check('C3: rangeHigh = 0', r.rangeHigh===0, `got ${r.rangeHigh}`);
-  check('C4: level beginner', r.levelLabel==='beginner', r.levelLabel);
+  check('C1: small positive floor (≈1300, <1500)', r.publicEstimate>0 && r.publicEstimate<1500, `got ${r.publicEstimate}`);
+  check('C2: rangeLow ≥ 0', r.rangeLow>=0, `got ${r.rangeLow}`);
+  check('C3: rangeHigh ≤ floor*1.3', r.rangeHigh<=Math.ceil(r.publicEstimate*1.3/100)*100, `got ${r.rangeHigh}`);
+  check('C4: level beginner or casual (low)', r.levelLabel==='beginner'||r.levelLabel==='casual', r.levelLabel);
 }
 
 console.log('\n── D: bucket extrapolation math (30k base) ──');
@@ -143,15 +153,15 @@ console.log('\n── D: bucket extrapolation math (30k base) ──');
   for(let i=0;i<10;i++)recs.push(rec(i<4?1:0,'medium')); // 0.4
   for(let i=0;i<10;i++)recs.push(rec(i<2?1:0,'hard'));   // 0.2
   const r=calculateResultEstimate(makeProfile(recs));
-  check('D1: estimate = 7800', r.publicEstimate===7800, `got ${r.publicEstimate}`); // 1200+1800+4800
+  check('D1: estimate = 7000 (shrunk, ability-aware hard)', r.publicEstimate===7000, `got ${r.publicEstimate}`); // 1165+1800+4080
   check('D2: level erudite (6000–9999)', r.levelLabel==='erudite', r.levelLabel);
 }
 
 console.log('\n── E: default rates for missing buckets ──');
 {
   const recs=[]; for(let i=0;i<10;i++)recs.push(rec(1,'easy'));
-  const r=calculateResultEstimate(makeProfile(recs)); // 1500 + 4500*0.4 + 24000*0.2 = 8100
-  check('E1: estimate = 8100 (defaults applied)', r.publicEstimate===8100, `got ${r.publicEstimate}`);
+  const r=calculateResultEstimate(makeProfile(recs)); // easy shrunk 1396 + med default 1800 + hard default 3600
+  check('E1: estimate = 6800 (defaults + shrink)', r.publicEstimate===6800, `got ${r.publicEstimate}`);
   check('E2: usedDefaultBuckets = [medium,hard]', JSON.stringify(r.usedDefaultBuckets)===JSON.stringify(['medium','hard']));
 }
 
@@ -227,7 +237,7 @@ console.log('\n── K: fuzz — estimate & range never exceed [0,30000] (500 r
 console.log('\n── L: empty profile safety ──');
 {
   const r=calculateResultEstimate({version:1,weights:{},stats:{totalAnswers:0,knowCount:0,heardCount:0,dontKnowCount:0,scoreSum:0},answers:[]});
-  check('L1: empty → defaults estimate 7700', r.publicEstimate===7700, `got ${r.publicEstimate}`); // 1050+1800+4800=7650 → roundTo100 → 7700
+  check('L1: empty → defaults estimate 3300', r.publicEstimate===3300, `got ${r.publicEstimate}`); // easy 1050 + medium 1800 + hard(prior 0.02) 480 = 3330 → 3300
   check('L2: empty → no zones', r.strongZones.length===0&&r.mediumZones.length===0&&r.weakZones.length===0);
   check('L3: empty → preliminary', r.isPreliminary===true);
 }
@@ -321,9 +331,9 @@ console.log('\n── M: regional seed excluded from bucket estimate, kept in zo
   // 10 regional-seed HARD, all know, flagged → if counted, hard rate 1.0 (=24000); must be excluded
   for(let i=0;i<10;i++)recs.push(rec(1,'hard',{domain:'sports',subdomain:'boxing',country:'Kazakhstan',macroRegion:'kz_ca',isRegionalSeed:true}));
   const r=calculateResultEstimate(makeProfile(recs));
-  // hard bucket has only seeds (excluded) → default 0.2; medium default 0.4
-  // 1500*1 + 4500*0.4 + 24000*0.2 = 8100
-  check('M1: seeds excluded from estimate (=8100, not ~27300)', r.publicEstimate===8100, `got ${r.publicEstimate}`);
+  // hard bucket has only seeds (excluded) → default; medium default; easy shrunk
+  // easy 1396 + medium default 1800 + hard default 3600 = 6800 (NOT ~27300)
+  check('M1: seeds excluded from estimate (=6800, not ~27300)', r.publicEstimate===6800, `got ${r.publicEstimate}`);
   check('M2: hard bucket uses default (seeds excluded)', r.bucketStats.hard.usedDefault===true);
   check('M3: regional-seed zone (boxing) still appears in strong', r.strongZones.some(z=>z.tag==='boxing'));
 }
@@ -340,6 +350,75 @@ console.log('\n── N: MVP level scale boundaries ──');
   check('N8: 6000 → erudite', levelOf(6000)==='erudite');
   check('N9: 9999 → erudite', levelOf(9999)==='erudite');
   check('N10: 10000 → master', levelOf(10000)==='master');
+}
+
+// ── T: weak-user scenarios (before=no-shrink/hard0.2 vs after=shrinkage) ──────
+// Reference "before" estimator: old formula, no shrinkage, hard default 0.2.
+function estBefore(recs){
+  const d={easy:{s:0,n:0},medium:{s:0,n:0},hard:{s:0,n:0}};
+  for(const r of recs){if(r.isRegionalSeed)continue;if(d[r.difficultyBucket])(d[r.difficultyBucket].s+=r.score,d[r.difficultyBucket].n++);}
+  const def={easy:0.7,medium:0.4,hard:0.2};let e=0;
+  for(const b of ['easy','medium','hard']){const rate=d[b].n>0?d[b].s/d[b].n:def[b];e+=BUCKET_UNIVERSE[b]*rate;}
+  return Math.min(30000,Math.max(0,Math.round(e/100)*100));
+}
+function recsToAnswers(recs){return recs.map((r,i)=>({qid:`Q${i}`,answer:r.score===1?'know':r.score===0.5?'heard':'dont_know',score:r.score,difficultyBucket:r.difficultyBucket,domain:r.domain??null,occupation:null,subdomain:r.subdomain??null,country:r.country??null,macroRegion:r.macroRegion??null,era:r.era??null,isRegionalSeed:r.isRegionalSeed===true,timestamp:i}));}
+
+console.log('\n── T: weak-user scenarios (before A vs after shrinkage) ──');
+function scenario(name, recs){
+  const before=estBefore(recs.map(r=>({difficultyBucket:r.difficultyBucket,score:r.score,isRegionalSeed:r.isRegionalSeed})));
+  const r=calculateResultEstimate(makeProfile(recs));
+  console.log(`  ${name}`);
+  console.log(`     before A (no shrink): ${before}`);
+  console.log(`     after shrinkage:      ${r.publicEstimate}  range ${r.rangeLow}–${r.rangeHigh}  level=${r.levelLabel}`);
+  return r;
+}
+{
+  // 1. weak user: mostly dont_know, only ultra-famous easy known, hard ~0
+  const s1=[];
+  for(let i=0;i<10;i++)s1.push(rec(i<3?1:0,'easy'));    // 3/10 easy
+  for(let i=0;i<8;i++) s1.push(rec(i<1?1:0,'medium'));   // 1/8 medium
+  for(let i=0;i<2;i++) s1.push(rec(0,'hard'));           // 0/2 hard
+  const r1=scenario('1) weak (mostly dont_know, hard≈0)', s1);
+
+  // 2. weak-average: ~28 recognized of 100, mostly easy
+  const s2=[];
+  for(let i=0;i<30;i++)s2.push(rec(i<20?1:0,'easy'));    // 20/30
+  for(let i=0;i<40;i++)s2.push(rec(i<6?1:0,'medium'));   // 6/40
+  for(let i=0;i<30;i++)s2.push(rec(i<2?1:0,'hard'));     // 2/30
+  const r2=scenario('2) weak-average (~28/100, mostly easy)', s2);
+
+  // 3. thematic: globally weak but several hard cards in one theme
+  const s3=[];
+  for(let i=0;i<10;i++)s3.push(rec(i<3?1:0,'easy'));
+  for(let i=0;i<10;i++)s3.push(rec(i<2?1:0,'medium'));
+  for(let i=0;i<20;i++)s3.push(rec(i<8?1:0,'hard',{domain:'sports',subdomain:'boxing'})); // 8/20 hard in theme
+  const r3=scenario('3) thematic (weak global, strong hard theme)', s3);
+
+  check('T1: all scenarios ≤ 30000', [r1,r2,r3].every(r=>r.publicEstimate<=30000));
+  // GOAL 1: ability-aware hard prior means a near-zero user gets a near-zero hard prior
+  // (userRate 0.2 → hardPrior 0.06), so the weak user is NOT labelled "strong".
+  check('T2: weak near-zero NOT strong/erudite/master',
+    ['beginner','casual','good'].includes(r1.levelLabel), `level=${r1.levelLabel} est=${r1.publicEstimate}`);
+  check('T3: thematic — still tempered vs current A (after ≤ before)',
+    r3.publicEstimate<=estBefore(s3.map(r=>({difficultyBucket:r.difficultyBucket,score:r.score,isRegionalSeed:r.isRegionalSeed}))),
+    `after=${r3.publicEstimate}`);
+}
+
+// ── U: shrinkage improves stability (flip-3-hard swing smaller than no-shrink) ─
+console.log('\n── U: stability — flip 3 hard, shrinkage vs no-shrink ──');
+{
+  const base=[];
+  for(let i=0;i<15;i++)base.push(rec(i<8?1:0,'easy'));
+  for(let i=0;i<15;i++)base.push(rec(i<6?1:0,'medium'));
+  for(let i=0;i<12;i++)base.push(rec(i<3?1:0,'hard'));   // thin-ish hard
+  const flip=(recs,n,from,to)=>{const c=recs.map(r=>({...r}));let f=0;for(const r of c){if(f>=n)break;if(r.difficultyBucket==='hard'&&r.score===(from==='know'?1:0)){r.score=(to==='know'?1:0);f++;}}return c;};
+  const afterBase=calculateResultEstimate(makeProfile(base)).publicEstimate;
+  const afterFlip=calculateResultEstimate(makeProfile(flip(base,3,'know','dont_know'))).publicEstimate;
+  const beforeBase=estBefore(base.map(r=>({difficultyBucket:r.difficultyBucket,score:r.score})));
+  const beforeFlip=estBefore(flip(base,3,'know','dont_know').map(r=>({difficultyBucket:r.difficultyBucket,score:r.score})));
+  const swingAfter=Math.abs(afterBase-afterFlip), swingBefore=Math.abs(beforeBase-beforeFlip);
+  console.log(`     before swing=±${swingBefore}  after(shrink) swing=±${swingAfter}`);
+  check('U1: shrinkage swing ≤ no-shrink swing', swingAfter<=swingBefore, `after=${swingAfter} before=${swingBefore}`);
 }
 
 console.log(`\n${'─'.repeat(60)}`);

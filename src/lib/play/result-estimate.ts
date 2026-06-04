@@ -70,8 +70,27 @@ export const BUCKET_UNIVERSE: Record<string, number> = {
 export const DEFAULT_BUCKET_RATES: Record<string, number> = {
   easy:   0.7,
   medium: 0.4,
-  hard:   0.2,
+  hard:   0.15,
 };
+
+// Layer-specific shrinkage strength. Each layer's observed rate is pulled toward its
+// conservative default with weight k/(n+k): thin, adaptively-biased layers (esp. hard,
+// which carries 80% of the estimate) stay stable, while the central value converges to
+// the observed rate as the sample grows (w = n/(n+k) → 1). Stage 6.2d.
+export const SHRINKAGE_K: Record<string, number> = {
+  easy:   3,
+  medium: 5,
+  hard:   10,
+};
+
+// Ability-aware hard prior. The hard layer carries 80% of the estimate; a FIXED hard
+// prior inflates weak users (who get thin hard data, since the hard gate withholds hard
+// cards until thematic confidence builds) into a misleading "strong" result. Instead the
+// hard layer shrinks toward a prior scaled by the user's OWN observed recognition rate,
+// so near-zero users keep a near-zero hard prior. easy/medium keep fixed defaults.
+export const HARD_PRIOR_FACTOR = 0.3;
+export const HARD_PRIOR_MIN    = 0.02;
+export const HARD_PRIOR_MAX    = DEFAULT_BUCKET_RATES.hard; // 0.15 cap
 
 // MVP level scale. 30 000 is the measurement base, not a realistic human ceiling —
 // most users land ~500–7000, so 6000+ is already very strong and 10000+ exceptional.
@@ -172,15 +191,26 @@ export function calculateResultEstimate(profile: AdaptiveProfile): ResultEstimat
   // representative of the global 30k universe, so they are excluded from the
   // bucket-extrapolation estimate. They still count toward zones/profile below.
   const bucketData: Record<string, { sum: number; count: number }> = {};
+  let nonSeedSum = 0, nonSeedCount = 0;
   for (const a of answers) {
     if (a.isRegionalSeed === true) continue;
+    nonSeedSum += a.score; nonSeedCount += 1;
     const b = a.difficultyBucket ?? 'unknown';
     if (!bucketData[b]) bucketData[b] = { sum: 0, count: 0 };
     bucketData[b].sum   += a.score;
     bucketData[b].count += 1;
   }
 
-  // ── 30k-base extrapolation; missing buckets use DEFAULT_BUCKET_RATES ──
+  // Ability-aware hard prior (see constants above); easy/medium keep fixed defaults.
+  const userObservedRate = nonSeedCount > 0 ? nonSeedSum / nonSeedCount : 0;
+  const hardPrior = Math.min(HARD_PRIOR_MAX, Math.max(HARD_PRIOR_MIN, userObservedRate * HARD_PRIOR_FACTOR));
+  const layerDefault: Record<string, number> = {
+    easy:   DEFAULT_BUCKET_RATES.easy,
+    medium: DEFAULT_BUCKET_RATES.medium,
+    hard:   hardPrior,
+  };
+
+  // ── 30k-base extrapolation; missing buckets use the (layer) default ──
   let rawEstimate = 0;
   const usedDefaultBuckets: string[] = [];
   const bucketStats = {} as ResultEstimate['bucketStats'];
@@ -188,11 +218,15 @@ export function calculateResultEstimate(profile: AdaptiveProfile): ResultEstimat
   for (const b of ['easy', 'medium', 'hard'] as const) {
     const d           = bucketData[b];
     const usedDefault = !(d && d.count > 0);
-    const scoreRate   = usedDefault ? DEFAULT_BUCKET_RATES[b] : d.sum / d.count;
     const count       = usedDefault ? 0 : d.count;
+    // observed rate (shown to the user as "% recognized" — kept raw, not shrunk)
+    const scoreRate   = usedDefault ? layerDefault[b] : d.sum / d.count;
     bucketStats[b]    = { count, scoreRate, usedDefault };
     if (usedDefault) usedDefaultBuckets.push(b);
-    rawEstimate += BUCKET_UNIVERSE[b] * scoreRate;
+    // estimate uses the SHRUNK rate (observed pulled toward the layer default by k/(n+k))
+    const k        = SHRINKAGE_K[b];
+    const shrunk   = (count * scoreRate + k * layerDefault[b]) / (count + k);
+    rawEstimate   += BUCKET_UNIVERSE[b] * shrunk;
   }
 
   const calibrationEstimate = roundTo(rawEstimate, 100);
