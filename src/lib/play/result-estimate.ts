@@ -92,6 +92,12 @@ export const HARD_PRIOR_FACTOR = 0.3;
 export const HARD_PRIOR_MIN    = 0.02;
 export const HARD_PRIOR_MAX    = DEFAULT_BUCKET_RATES.hard; // 0.15 cap
 
+// Nonlinear hard damping. The adaptive hard sample is biased toward the user's strong
+// themes, so a linear extrapolation over-credits the 24000-person hard universe. Since
+// the shrunk hard rate is in [0,1], rate^1.5 < rate damps it — more for low rates (theme
+// noise), less for high rates (genuine breadth). easy/medium stay linear. Stage 6.2e.
+export const HARD_DAMP_EXPONENT = 1.5;
+
 // MVP level scale. 30 000 is the measurement base, not a realistic human ceiling —
 // most users land ~500–7000, so 6000+ is already very strong and 10000+ exceptional.
 //   beginner 0–499 · casual 500–1499 · good 1500–2999 · strong 3000–5999
@@ -226,7 +232,9 @@ export function calculateResultEstimate(profile: AdaptiveProfile): ResultEstimat
     // estimate uses the SHRUNK rate (observed pulled toward the layer default by k/(n+k))
     const k        = SHRINKAGE_K[b];
     const shrunk   = (count * scoreRate + k * layerDefault[b]) / (count + k);
-    rawEstimate   += BUCKET_UNIVERSE[b] * shrunk;
+    // hard layer is damped nonlinearly (theme-bias correction); easy/medium stay linear
+    const effective = b === 'hard' ? Math.pow(shrunk, HARD_DAMP_EXPONENT) : shrunk;
+    rawEstimate   += BUCKET_UNIVERSE[b] * effective;
   }
 
   const calibrationEstimate = roundTo(rawEstimate, 100);

@@ -9,6 +9,7 @@ const BUCKET_UNIVERSE      = { easy: 1500, medium: 4500, hard: 24000 };
 const DEFAULT_BUCKET_RATES = { easy: 0.7,  medium: 0.4,  hard: 0.15 };
 const SHRINKAGE_K          = { easy: 3,    medium: 5,    hard: 10   };
 const HARD_PRIOR_FACTOR    = 0.3, HARD_PRIOR_MIN = 0.02, HARD_PRIOR_MAX = 0.15;
+const HARD_DAMP_EXPONENT   = 1.5;
 const LEVEL_THRESHOLDS = [[10000,'master'],[6000,'erudite'],[3000,'strong'],[1500,'good'],[500,'casual']];
 const ZONE_MIN_TOTAL=5, ZONE_MAX=5, STRONG=0.7, WEAK=0.4, STRONG_MAX_GEO=2;
 const ZONE_CATEGORY = { subdomain:'topic', domain:'topic', country:'geo', macroRegion:'geo', era:'time' };
@@ -40,7 +41,8 @@ function calculateResultEstimate(profile){
     if(usedDefault)usedDefaultBuckets.push(b);
     const k=SHRINKAGE_K[b];
     const shrunk=(count*scoreRate+k*layerDefault[b])/(count+k);
-    rawEstimate+=BUCKET_UNIVERSE[b]*shrunk;
+    const effective=b==='hard'?Math.pow(shrunk,HARD_DAMP_EXPONENT):shrunk;
+    rawEstimate+=BUCKET_UNIVERSE[b]*effective;
   }
   const calibrationEstimate=roundTo(rawEstimate,100);
   const publicEstimate=clamp(calibrationEstimate,0,UNIVERSE_TOTAL);
@@ -113,7 +115,7 @@ console.log('\n── A: 30k cap (estimate never exceeds 30000) ──');
   for(let i=0;i<40;i++)recs.push(rec(1,'hard'));
   const r=calculateResultEstimate(makeProfile(recs));
   // Shrinkage keeps even all-know below the 30k cap at finite n (rates pulled toward defaults).
-  check('A1: all-know high but < cap (shrinkage)', r.publicEstimate>=24000 && r.publicEstimate<30000, `got ${r.publicEstimate}`);
+  check('A1: all-know high but < cap (shrinkage)', r.publicEstimate>=23000 && r.publicEstimate<30000, `got ${r.publicEstimate}`);
   check('A2: publicEstimate ≤ 30000', r.publicEstimate<=30000, `got ${r.publicEstimate}`);
   check('A3: rangeHigh clamped ≤ 30000', r.rangeHigh<=30000, `got ${r.rangeHigh}`);
   check('A4: rangeLow ≥ 0', r.rangeLow>=0, `got ${r.rangeLow}`);
@@ -153,15 +155,15 @@ console.log('\n── D: bucket extrapolation math (30k base) ──');
   for(let i=0;i<10;i++)recs.push(rec(i<4?1:0,'medium')); // 0.4
   for(let i=0;i<10;i++)recs.push(rec(i<2?1:0,'hard'));   // 0.2
   const r=calculateResultEstimate(makeProfile(recs));
-  check('D1: estimate = 7000 (shrunk, ability-aware hard)', r.publicEstimate===7000, `got ${r.publicEstimate}`); // 1165+1800+4080
-  check('D2: level erudite (6000–9999)', r.levelLabel==='erudite', r.levelLabel);
+  check('D1: estimate = 4600 (shrunk + hard^1.5)', r.publicEstimate===4600, `got ${r.publicEstimate}`); // 1165+1800+4080
+  check('D2: level strong (3000–5999)', r.levelLabel==='strong', r.levelLabel);
 }
 
 console.log('\n── E: default rates for missing buckets ──');
 {
   const recs=[]; for(let i=0;i<10;i++)recs.push(rec(1,'easy'));
   const r=calculateResultEstimate(makeProfile(recs)); // easy shrunk 1396 + med default 1800 + hard default 3600
-  check('E1: estimate = 6800 (defaults + shrink)', r.publicEstimate===6800, `got ${r.publicEstimate}`);
+  check('E1: estimate = 4600 (defaults + shrink + hard^1.5)', r.publicEstimate===4600, `got ${r.publicEstimate}`);
   check('E2: usedDefaultBuckets = [medium,hard]', JSON.stringify(r.usedDefaultBuckets)===JSON.stringify(['medium','hard']));
 }
 
@@ -237,7 +239,7 @@ console.log('\n── K: fuzz — estimate & range never exceed [0,30000] (500 r
 console.log('\n── L: empty profile safety ──');
 {
   const r=calculateResultEstimate({version:1,weights:{},stats:{totalAnswers:0,knowCount:0,heardCount:0,dontKnowCount:0,scoreSum:0},answers:[]});
-  check('L1: empty → defaults estimate 3300', r.publicEstimate===3300, `got ${r.publicEstimate}`); // easy 1050 + medium 1800 + hard(prior 0.02) 480 = 3330 → 3300
+  check('L1: empty → defaults estimate 2900', r.publicEstimate===2900, `got ${r.publicEstimate}`); // easy 1050 + medium 1800 + hard(prior 0.02) 480 = 3330 → 3300
   check('L2: empty → no zones', r.strongZones.length===0&&r.mediumZones.length===0&&r.weakZones.length===0);
   check('L3: empty → preliminary', r.isPreliminary===true);
 }
@@ -333,7 +335,7 @@ console.log('\n── M: regional seed excluded from bucket estimate, kept in zo
   const r=calculateResultEstimate(makeProfile(recs));
   // hard bucket has only seeds (excluded) → default; medium default; easy shrunk
   // easy 1396 + medium default 1800 + hard default 3600 = 6800 (NOT ~27300)
-  check('M1: seeds excluded from estimate (=6800, not ~27300)', r.publicEstimate===6800, `got ${r.publicEstimate}`);
+  check('M1: seeds excluded from estimate (=4600, not ~27300)', r.publicEstimate===4600, `got ${r.publicEstimate}`);
   check('M2: hard bucket uses default (seeds excluded)', r.bucketStats.hard.usedDefault===true);
   check('M3: regional-seed zone (boxing) still appears in strong', r.strongZones.some(z=>z.tag==='boxing'));
 }
