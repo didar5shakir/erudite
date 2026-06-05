@@ -38,7 +38,9 @@ export interface AnalyticsPayload {
   top_zones?:       string[]; // axis:tag theme tags — no person names / QIDs
 }
 
-const ENDPOINT = '/api/analytics';
+// Absolute path — must stay leading-slash so it resolves to the site root, never
+// relative to the current locale page (which would hit /<locale>/api/analytics).
+const ANALYTICS_ENDPOINT = '/api/analytics';
 
 export function track(event: AnalyticsEvent, payload: AnalyticsPayload = {}): void {
   if (typeof window === 'undefined') return;
@@ -53,10 +55,10 @@ export function track(event: AnalyticsEvent, payload: AnalyticsPayload = {}): vo
 
     if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
       const blob = new Blob([json], { type: 'application/json' });
-      if (navigator.sendBeacon(ENDPOINT, blob)) return;
+      if (navigator.sendBeacon(ANALYTICS_ENDPOINT, blob)) return;
     }
 
-    void fetch(ENDPOINT, {
+    void fetch(ANALYTICS_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: json,
