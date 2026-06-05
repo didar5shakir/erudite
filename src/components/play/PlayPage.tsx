@@ -10,6 +10,8 @@ import {
   saveSession,
 } from '@/lib/play/play-storage';
 import { updateAdaptiveProfile } from '@/lib/play/adaptive-profile';
+import type { AdaptiveProfile } from '@/lib/play/adaptive-profile';
+import { track, type AnalyticsPayload } from '@/lib/analytics/track';
 import {
   getOrCreateAdaptiveProfile,
   saveAdaptiveProfile,
@@ -27,6 +29,7 @@ import {
 } from '@/lib/play/play-sampler';
 import type { PlayPoolsExtended } from '@/lib/play/play-sampler';
 import { calculateResultEstimate } from '@/lib/play/result-estimate';
+import type { ResultEstimate } from '@/lib/play/result-estimate';
 import PlayCard from './PlayCard';
 import PlayResult from './PlayResult';
 
@@ -82,6 +85,32 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
   const [pools, setPools] = useState<PlayPoolsExtended | null>(null);
   const startedAt = useRef<number>(Date.now());
 
+  // Build the aggregated, non-personal analytics payload. estimate-bearing events
+  // (result_*/continue/share/restart) pass the computed estimate; session/checkpoint
+  // events omit it. top_zones are theme tags only (axis:tag) — never names/QIDs.
+  function buildAnalytics(
+    profile:   AdaptiveProfile | null,
+    sessionId: string | undefined,
+    estimate?: ResultEstimate,
+  ): AnalyticsPayload {
+    return {
+      session_id:      sessionId,
+      locale,
+      region,
+      total_answers:   profile?.stats.totalAnswers,
+      know_count:      profile?.stats.knowCount,
+      heard_count:     profile?.stats.heardCount,
+      dont_know_count: profile?.stats.dontKnowCount,
+      estimate:        estimate?.publicEstimate,
+      range_low:       estimate?.rangeLow,
+      range_high:      estimate?.rangeHigh,
+      level:           estimate?.levelLabel,
+      top_zones:       estimate
+        ? estimate.displayStrongZones.slice(0, 5).map(z => `${z.axis}:${z.tag}`)
+        : undefined,
+    };
+  }
+
   useEffect(() => {
     fetch('/data/play_pools.json')
       .then(r => r.json())
@@ -97,6 +126,13 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
       const fresh = createNewSession(locale, initialDeck, region);
       saveSession(fresh, region);
       setSession(fresh);
+      // A brand-new test began (no resumable session). Not fired on resume/continue.
+      // So a full first 100-card test emits 3 checkpoints total: session_started +
+      // reached_30 + result_100 (a *continued* 100→200 run emits continue_clicked +
+      // result_200, no session_started). Dev Strict-Mode safe: this branch persists the
+      // session synchronously, so the second Strict invocation finds it via loadSession
+      // and takes the resume branch above — session_started fires exactly once.
+      track('session_started', buildAnalytics(getOrCreateAdaptiveProfile(), fresh.sessionId));
     }
     startedAt.current = Date.now();
   // initialDeck identity is stable (comes from server), locale/region changes trigger new session
@@ -184,6 +220,24 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
     saveSession(updated, region);
     setSession(updated);
     startedAt.current = now;
+
+    // ── Analytics: low-frequency checkpoints ONLY (never one per answer/card) ──
+    // Both fire on exact cumulative counts, so each occurs at most once and is
+    // naturally idempotent across reloads (handleAnswer runs only on a real answer).
+    const newTotal = updatedProfile.stats.totalAnswers;
+    if (newTotal === 30) {
+      track('reached_30', buildAnalytics(updatedProfile, session.sessionId));
+    }
+    if (isCompleted) {
+      const resultEvent =
+        newTotal === 100 ? 'result_100' :
+        newTotal === 200 ? 'result_200' :
+        newTotal === 300 ? 'result_300' : null;
+      if (resultEvent) {
+        const completedEstimate = calculateResultEstimate(updatedProfile);
+        track(resultEvent, buildAnalytics(updatedProfile, session.sessionId, completedEstimate));
+      }
+    }
   }
 
   // Continue: start a fresh 100-card session; cumulative adaptive profile is PRESERVED.
@@ -191,6 +245,8 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
   // repeats across the 100→200→300→… progression. Falls back to the SSR initialDeck
   // only if pools haven't loaded (shouldn't happen post-completion, but stays safe).
   function handleContinue() {
+    const prevProfile = getOrCreateAdaptiveProfile();
+    track('continue_clicked', buildAnalytics(prevProfile, session?.sessionId, calculateResultEstimate(prevProfile)));
     clearSession(locale, region);
     const answeredIds = new Set(getOrCreateAdaptiveProfile().answers.map(a => a.qid));
     const samplerRegion = region === 'kz' ? 'kz' : undefined;
@@ -205,6 +261,8 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
 
   // Start new test: clear session AND cumulative profile (confirmed in PlayResult).
   function handleReset() {
+    const prevProfile = getOrCreateAdaptiveProfile();
+    track('restart_clicked', buildAnalytics(prevProfile, session?.sessionId, calculateResultEstimate(prevProfile)));
     clearSession(locale, region);
     clearAdaptiveProfile();
     const fresh = createNewSession(locale, initialDeck, region);
@@ -233,6 +291,7 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
           answers={session.answers}
           onContinue={handleContinue}
           onReset={handleReset}
+          onShare={() => track('share_clicked', buildAnalytics(profile, session.sessionId, estimate))}
         />
       </div>
     );

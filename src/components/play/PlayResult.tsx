@@ -15,6 +15,7 @@ interface PlayResultProps {
   answers:    Record<string, Answer>;      // current-session answers
   onContinue: () => void;
   onReset:    () => void;
+  onShare?:   () => void;   // analytics: user tapped Share (fired regardless of share/clipboard outcome)
 }
 
 function formatNumber(n: number): string {
@@ -49,7 +50,7 @@ const ANSWER_META: Record<AnswerType, { icon: string; color: string }> = {
   dont_know: { icon: '✕', color: 'text-rose-400' },
 };
 
-export default function PlayResult({ estimate, locale, cards, answers, onContinue, onReset }: PlayResultProps) {
+export default function PlayResult({ estimate, locale, cards, answers, onContinue, onReset, onShare }: PlayResultProps) {
   const t = useTranslations('play');
   const [showDetails, setShowDetails] = useState(false);
   const [showAnswers, setShowAnswers] = useState(false);
@@ -74,6 +75,7 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
   }
 
   function handleShare() {
+    onShare?.();
     const url = typeof window !== 'undefined' ? window.location.href : '';
     if (typeof navigator !== 'undefined' && navigator.share) {
       const zoneStr = displayStrongZones.slice(0, 5)
