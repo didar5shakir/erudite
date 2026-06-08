@@ -1,11 +1,14 @@
-// Analytics ingestion endpoint. Stage 6.3a — DEBUG SINK ONLY.
+// Analytics ingestion endpoint. Stage 6.3b — Supabase sink.
 //
-// Phase 6.3a: validates + whitelists the payload and logs it to the server console
-// (visible in Vercel Function Logs). NO database write yet — Supabase is wired in a
-// later phase by swapping the sink below; call sites and payload stay unchanged.
+// Validates + whitelists the payload, then hands it to the server-only sink which
+// inserts one row into Supabase (or falls back to console logging when Supabase env
+// vars are absent). The service-role key lives only in server-sink.ts, never here and
+// never in any client bundle. Call sites and payload are unchanged from 6.3a.
 //
 // Security/privacy: only the known events and whitelisted aggregated fields are kept;
-// anything else (incl. any accidental PII) is dropped before logging.
+// anything else (incl. any accidental PII / QIDs / names) is dropped before the sink.
+
+import { recordAnalyticsEvent } from '@/lib/analytics/server-sink';
 
 const KNOWN_EVENTS = new Set([
   'session_started',
@@ -61,8 +64,14 @@ export async function POST(request: Request): Promise<Response> {
   }
   if (typeof safe.timestamp !== 'string') safe.timestamp = new Date().toISOString();
 
-  // ── SINK (Phase 6.3a): debug console only. No DB write. ──
-  console.log('[analytics]', JSON.stringify(safe));
+  // ── SINK (6.3b): Supabase insert (server-only); console fallback if env missing. ──
+  // Awaited so the serverless function does not terminate before the write completes.
+  // recordAnalyticsEvent never throws, but guard anyway so the route always returns 204.
+  try {
+    await recordAnalyticsEvent(safe);
+  } catch (err) {
+    console.error('[analytics] sink error', err);
+  }
 
   return new Response(null, { status: 204 });
 }
