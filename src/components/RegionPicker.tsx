@@ -10,7 +10,13 @@ export default function RegionPicker({ regionIds }: { regionIds: RegionId[] }) {
 
   function handleSelect(id: RegionId) {
     localStorage.setItem('user_region', id)
-    router.push('/quiz')
+    // Start the real game. Kazakhstan / Central Asia uses the regional pool;
+    // every other region uses the global pool (play route default).
+    if (id === 'kazakhstan_central_asia') {
+      router.push({ pathname: '/play', query: { region: 'kz' } })
+    } else {
+      router.push('/play')
+    }
   }
 
   return (

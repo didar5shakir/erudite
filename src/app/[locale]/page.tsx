@@ -62,7 +62,7 @@ export default async function Home({
 
           <div className="flex justify-center">
             <Link
-              href="/onboarding"
+              href={{ pathname: '/play', query: { region: 'kz' } }}
               className="bg-emerald-deep text-white font-medium rounded-2xl hover:opacity-90 transition-opacity min-w-[280px] text-base px-10 py-4 lg:text-lg lg:px-12 lg:py-5 inline-flex items-center justify-center"
             >
               {t('startButton')}
