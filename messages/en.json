@@ -9,7 +9,6 @@
     "withAccount": "Your progress is saved in the browser — continue later"
   },
   "startButton": "Take the test",
-  "loginButton": "Sign in",
   "onboarding": {
     "title": "Where are you from?",
     "subtitle": "This helps us pick figures you're more likely to recognize"

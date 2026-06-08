@@ -23,9 +23,6 @@ export default async function OnboardingPage({
     <main className="min-h-screen bg-cream flex flex-col animate-fade-up">
 
       <nav className="flex items-center justify-end gap-8 px-8 pt-5">
-        <button className="text-sm text-muted hover:text-graphite transition-colors">
-          {t('loginButton')}
-        </button>
         <LanguageSwitcher />
       </nav>
 
