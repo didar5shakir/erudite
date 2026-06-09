@@ -11,7 +11,8 @@
   "startButton": "Начать тест",
   "onboarding": {
     "title": "Откуда ты?",
-    "subtitle": "Это поможет подобрать фигур, которых ты, скорее всего, знаешь"
+    "subtitle": "Это поможет подобрать фигур, которых ты, скорее всего, знаешь",
+    "intro": "100 карточек — отмечай, кого знаешь. Регион поможет начать с близких тебе по культуре имён. Мы примерно оценим, скольких из 30 000 известных людей ты узнаёшь. Без регистрации."
   },
   "play": {
     "know": "Знаю",
@@ -23,9 +24,13 @@
     "result_estimate_post": "человек из {total}",
     "result_range_label": "Диапазон:",
     "result_level_label": "Уровень:",
-    "result_strong_title": "Сильные зоны",
-    "result_medium_title": "Средние зоны",
-    "result_weak_title": "Зоны для роста",
+    "result_approx_note": "Это приблизительная оценка — диапазон, а не точное число.",
+    "result_strong_title": "Похоже, ты силён в этих темах",
+    "result_medium_title": "Скорее знакомые темы",
+    "result_weak_title": "Темы для роста",
+    "hint_heard": "«Слышал(а)» тоже учитывается.",
+    "hint_adaptive": "Теперь тест точнее подстраивается под тебя.",
+    "result_continue_hint": "Можно продолжить — оценка станет точнее.",
     "result_strong_empty": "Пока нет — ответь на больше вопросов",
     "result_medium_empty": "Пока нет",
     "result_weak_empty": "Пока нет — ответь на больше вопросов",
@@ -46,7 +51,7 @@
     "start_new_confirm": "Сбросить весь прогресс и профиль? Это действие необратимо.",
     "share_text": "Erudite: я узнаю примерно {estimate} из {total} известных людей (уровень: {level}, {count} ответов). Сильные зоны: {zones}. А ты сколько?",
     "progress_answered": "Пройдено: {count} ответов",
-    "result_strong_fallback_title": "Наиболее выраженные зоны",
+    "result_strong_fallback_title": "Наиболее заметные темы",
     "details_row": "{count} ответов · {rate}% узнавания",
     "level_beginner": "Новичок",
     "level_casual": "Любитель",

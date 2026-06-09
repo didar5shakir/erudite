@@ -282,8 +282,8 @@ export default function PlayPage({ initialDeck, locale, region, regionExplicit, 
 
   if (!session) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950">
-        <p className="text-neutral-500">{labels.loading}</p>
+      <div className="flex min-h-screen items-center justify-center bg-cream">
+        <p className="text-muted">{labels.loading}</p>
       </div>
     );
   }
@@ -292,7 +292,7 @@ export default function PlayPage({ initialDeck, locale, region, regionExplicit, 
     const profile = getOrCreateAdaptiveProfile();
     const estimate = calculateResultEstimate(profile);
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 py-8">
+      <div className="flex min-h-screen items-center justify-center bg-cream px-4 py-8">
         <PlayResult
           estimate={estimate}
           locale={locale}
@@ -311,14 +311,14 @@ export default function PlayPage({ initialDeck, locale, region, regionExplicit, 
   // Waiting for pools to load so adaptive card can be generated
   if (!currentPerson) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950">
-        <p className="text-neutral-500">{labels.loading}</p>
+      <div className="flex min-h-screen items-center justify-center bg-cream">
+        <p className="text-muted">{labels.loading}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 py-8">
+    <div className="flex min-h-screen items-center justify-center bg-cream px-4 py-8">
       <PlayCard
         person={currentPerson}
         locale={locale}

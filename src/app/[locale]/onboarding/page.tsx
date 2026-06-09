@@ -38,6 +38,10 @@ export default async function OnboardingPage({
             </p>
           </div>
 
+          <p className="text-sm md:text-base leading-relaxed text-muted border-l-2 border-divider pl-4">
+            {t('onboarding.intro')}
+          </p>
+
           <RegionPicker regionIds={regionIds} />
 
         </div>

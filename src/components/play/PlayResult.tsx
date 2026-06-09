@@ -45,9 +45,9 @@ const ACCURACY_KEY = {
 } as const;
 
 const ANSWER_META: Record<AnswerType, { icon: string; color: string }> = {
-  know:      { icon: '✓', color: 'text-emerald-400' },
-  heard:     { icon: '◐', color: 'text-amber-400' },
-  dont_know: { icon: '✕', color: 'text-rose-400' },
+  know:      { icon: '✓', color: 'text-emerald-deep' },
+  heard:     { icon: '◐', color: 'text-amber-700' },
+  dont_know: { icon: '✕', color: 'text-rose-700' },
 };
 
 export default function PlayResult({ estimate, locale, cards, answers, onContinue, onReset, onShare }: PlayResultProps) {
@@ -100,7 +100,7 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
 
   function renderZones(zones: ZoneStats[], emptyKey: string, color: string) {
     if (zones.length === 0) {
-      return <p className="text-neutral-500 text-sm">{t(emptyKey)}</p>;
+      return <p className="text-muted text-sm">{t(emptyKey)}</p>;
     }
     return (
       <div className="flex flex-wrap gap-2">
@@ -130,67 +130,68 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-4 text-center">
 
-      {/* Estimate headline */}
-      <div className="bg-neutral-900 rounded-xl shadow-lg px-8 py-7 space-y-1">
-        <p className="text-neutral-400 text-sm">{t('result_estimate_pre')}</p>
-        <p className="text-6xl font-serif font-semibold text-white leading-tight">
+      {/* Estimate headline — grouped estimate / range / level */}
+      <div className="bg-white border border-divider rounded-2xl shadow-sm px-8 py-7 space-y-1">
+        <p className="text-muted text-sm">{t('result_estimate_pre')}</p>
+        <p className="text-6xl font-serif font-semibold text-graphite leading-tight">
           {formatNumber(publicEstimate)}
         </p>
-        <p className="text-neutral-400 text-sm">
+        <p className="text-muted text-sm">
           {t('result_estimate_post', { total: formatNumber(universeTotal) })}
         </p>
 
-        <div className="pt-3 space-y-1 text-sm">
-          <p className="text-neutral-500">
+        <div className="mt-4 pt-4 border-t border-divider space-y-1 text-sm">
+          <p className="text-muted">
             {t('result_range_label')}{' '}
-            <span className="text-neutral-300">
+            <span className="text-graphite font-medium">
               {formatNumber(rangeLow)}&nbsp;–&nbsp;{formatNumber(rangeHigh)}
             </span>
           </p>
-          <p className="text-neutral-500">
+          <p className="text-muted">
             {t('result_level_label')}{' '}
-            <span className="text-neutral-200 font-semibold">{t(LEVEL_KEY[levelLabel])}</span>
+            <span className="text-emerald-deep font-semibold">{t(LEVEL_KEY[levelLabel])}</span>
           </p>
+          <p className="text-muted/80 text-xs pt-1">{t('result_approx_note')}</p>
         </div>
       </div>
 
       {/* Accuracy note */}
-      <p className="text-neutral-400 text-xs px-2">
+      <p className="text-muted text-xs px-2">
         {t(ACCURACY_KEY[accuracyTier], { count: answeredCount })}
       </p>
 
       {/* Progress / answer breakdown */}
-      <div className="bg-neutral-900 rounded-xl px-8 py-5 space-y-2 text-sm">
-        <p className="text-neutral-300 font-semibold">{t('progress_answered', { count: answeredCount })}</p>
-        <div className="flex justify-between"><span className="text-neutral-400">{t('know')}</span><span className="text-emerald-300">{knowCount}</span></div>
-        <div className="flex justify-between"><span className="text-neutral-400">{t('heard')}</span><span className="text-amber-300">{heardCount}</span></div>
-        <div className="flex justify-between"><span className="text-neutral-400">{t('dont_know')}</span><span className="text-rose-300">{dontKnowCount}</span></div>
+      <div className="bg-white border border-divider rounded-2xl px-8 py-5 space-y-2 text-sm">
+        <p className="text-graphite font-semibold">{t('progress_answered', { count: answeredCount })}</p>
+        <div className="flex justify-between"><span className="text-muted">{t('know')}</span><span className="text-emerald-deep font-medium">{knowCount}</span></div>
+        <div className="flex justify-between"><span className="text-muted">{t('heard')}</span><span className="text-amber-700 font-medium">{heardCount}</span></div>
+        <div className="flex justify-between"><span className="text-muted">{t('dont_know')}</span><span className="text-rose-700 font-medium">{dontKnowCount}</span></div>
       </div>
 
       {/* Profile zones */}
-      <div className="bg-neutral-900 rounded-xl px-8 py-5 text-left space-y-4">
+      <div className="bg-white border border-divider rounded-2xl px-8 py-5 text-left space-y-4">
         <div className="space-y-2">
-          <p className="text-neutral-300 font-semibold text-sm">{strongTitle}</p>
-          {renderZones(displayStrongZones, 'result_strong_empty', 'bg-emerald-900/60 text-emerald-300')}
+          <p className="text-graphite font-semibold text-sm">{strongTitle}</p>
+          {renderZones(displayStrongZones, 'result_strong_empty', 'bg-emerald-deep/10 text-emerald-deep')}
         </div>
         <div className="space-y-2">
-          <p className="text-neutral-300 font-semibold text-sm">{t('result_medium_title')}</p>
-          {renderZones(mediumDisplay, 'result_medium_empty', 'bg-amber-900/50 text-amber-300')}
+          <p className="text-graphite font-semibold text-sm">{t('result_medium_title')}</p>
+          {renderZones(mediumDisplay, 'result_medium_empty', 'bg-amber-100 text-amber-800')}
         </div>
         <div className="space-y-2">
-          <p className="text-neutral-300 font-semibold text-sm">{t('result_weak_title')}</p>
-          {renderZones(weakZones, 'result_weak_empty', 'bg-rose-900/60 text-rose-300')}
+          <p className="text-graphite font-semibold text-sm">{t('result_weak_title')}</p>
+          {renderZones(weakZones, 'result_weak_empty', 'bg-rose-100 text-rose-700')}
         </div>
       </div>
 
       {/* View details (difficulty breakdown) */}
-      <div className="bg-neutral-900 rounded-xl px-8 py-4 text-left">
+      <div className="bg-white border border-divider rounded-2xl px-8 py-4 text-left">
         <button
           onClick={() => setShowDetails(v => !v)}
-          className="w-full flex items-center justify-between text-neutral-300 text-sm font-medium"
+          className="w-full flex items-center justify-between text-graphite text-sm font-medium"
         >
           <span>{t('details_title')}</span>
-          <span className="text-neutral-500">{showDetails ? t('btn_hide_details') : t('btn_view_details')}</span>
+          <span className="text-muted">{showDetails ? t('btn_hide_details') : t('btn_view_details')}</span>
         </button>
         {showDetails && (
           <div className="pt-3 space-y-2 text-sm">
@@ -199,8 +200,8 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
               const pct = Math.round(s.scoreRate * 100);
               return (
                 <div key={b} className="flex justify-between gap-3">
-                  <span className="text-neutral-400">{t(labelKey)}</span>
-                  <span className="text-neutral-300 text-right">
+                  <span className="text-muted">{t(labelKey)}</span>
+                  <span className="text-graphite text-right">
                     {s.usedDefault ? '—' : t('details_row', { count: s.count, rate: pct })}
                   </span>
                 </div>
@@ -214,27 +215,28 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
       <div className="flex flex-col gap-3">
         <button
           onClick={onContinue}
-          className="w-full py-4 rounded-xl bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 text-white font-semibold text-lg transition-colors"
+          className="w-full py-4 rounded-xl bg-emerald-deep text-white font-semibold text-lg hover:opacity-90 active:opacity-100 transition-opacity"
         >
           {milestone === null
             ? t('continue_more')
             : t('continue_to', { target: formatNumber(milestone) })}
         </button>
+        <p className="text-muted text-xs -mt-1">{t('result_continue_hint')}</p>
         <button
           onClick={handleShare}
-          className="w-full py-3 rounded-xl bg-neutral-700 hover:bg-neutral-600 active:bg-neutral-800 text-white font-medium transition-colors"
+          className="w-full py-3 rounded-xl border border-divider bg-white text-graphite font-medium hover:bg-divider/40 active:bg-divider/60 transition-colors"
         >
           {t('btn_share')}
         </button>
         <button
           onClick={() => setShowAnswers(true)}
-          className="w-full py-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 active:bg-neutral-900 text-neutral-300 font-medium transition-colors"
+          className="w-full py-3 rounded-xl border border-divider bg-white text-graphite font-medium hover:bg-divider/40 active:bg-divider/60 transition-colors"
         >
           {t('btn_show_answers')}
         </button>
         <button
           onClick={handleReset}
-          className="w-full py-3 rounded-xl border border-neutral-700 text-neutral-400 hover:text-rose-300 hover:border-rose-800 active:bg-neutral-900 font-medium transition-colors"
+          className="w-full py-3 rounded-xl border border-divider text-muted hover:text-rose-700 hover:border-rose-300 active:bg-divider/30 font-medium transition-colors"
         >
           {t('btn_start_new')}
         </button>
@@ -243,7 +245,7 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
       {/* Toast */}
       {toast && (
         <div className="fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-          <div className="rounded-xl bg-emerald-800 text-emerald-50 text-sm px-4 py-3 shadow-lg max-w-md">
+          <div className="rounded-xl bg-emerald-deep text-white text-sm px-4 py-3 shadow-lg max-w-md">
             {toast}
           </div>
         </div>
@@ -251,11 +253,11 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
 
       {/* Answers drawer */}
       {showAnswers && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 px-0 sm:px-4">
-          <div className="w-full sm:max-w-md max-h-[85vh] flex flex-col bg-neutral-950 sm:rounded-2xl rounded-t-2xl border border-neutral-800">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800">
-              <span className="text-neutral-200 font-semibold">{t('answers_title')}</span>
-              <button onClick={() => setShowAnswers(false)} className="text-neutral-400 hover:text-neutral-200 text-sm">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-graphite/40 px-0 sm:px-4">
+          <div className="w-full sm:max-w-md max-h-[85vh] flex flex-col bg-cream sm:rounded-2xl rounded-t-2xl border border-divider shadow-lg">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-divider">
+              <span className="text-graphite font-semibold">{t('answers_title')}</span>
+              <button onClick={() => setShowAnswers(false)} className="text-muted hover:text-graphite text-sm">
                 {t('btn_close')}
               </button>
             </div>
@@ -275,8 +277,8 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
                         <div key={p.wikidata_id} className="flex items-start gap-2">
                           <span className={`${meta.color} text-sm mt-0.5`}>{meta.icon}</span>
                           <div>
-                            <p className="text-neutral-100 text-sm leading-tight">{pickDisplayName(p, locale)}</p>
-                            {meta2 && <p className="text-neutral-500 text-xs">{meta2}</p>}
+                            <p className="text-graphite text-sm leading-tight">{pickDisplayName(p, locale)}</p>
+                            {meta2 && <p className="text-muted text-xs">{meta2}</p>}
                           </div>
                         </div>
                       );

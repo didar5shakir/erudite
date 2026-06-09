@@ -11,7 +11,8 @@
   "startButton": "Take the test",
   "onboarding": {
     "title": "Where are you from?",
-    "subtitle": "This helps us pick figures you're more likely to recognize"
+    "subtitle": "This helps us pick figures you're more likely to recognize",
+    "intro": "100 cards — mark whoever you know. Your region just helps the start feel closer to your culture. We'll estimate roughly how many of the 30,000 famous people you recognize. No sign-up."
   },
   "play": {
     "know": "I know them",
@@ -23,9 +24,13 @@
     "result_estimate_post": "people out of {total}",
     "result_range_label": "Range:",
     "result_level_label": "Level:",
-    "result_strong_title": "Strong areas",
-    "result_medium_title": "Medium areas",
+    "result_approx_note": "This is a rough estimate — a range, not an exact number.",
+    "result_strong_title": "You seem strong in these areas",
+    "result_medium_title": "Somewhat familiar areas",
     "result_weak_title": "Areas to grow",
+    "hint_heard": "\"Heard of\" counts too.",
+    "hint_adaptive": "The test now tunes itself to you.",
+    "result_continue_hint": "Continue for a more accurate estimate.",
     "result_strong_empty": "None yet — answer more questions",
     "result_medium_empty": "None yet",
     "result_weak_empty": "None yet — answer more questions",
