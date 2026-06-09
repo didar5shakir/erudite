@@ -12,6 +12,7 @@ import {
 import { updateAdaptiveProfile } from '@/lib/play/adaptive-profile';
 import type { AdaptiveProfile } from '@/lib/play/adaptive-profile';
 import { track, type AnalyticsPayload } from '@/lib/analytics/track';
+import { useRouter } from '@/i18n/navigation';
 import {
   getOrCreateAdaptiveProfile,
   saveAdaptiveProfile,
@@ -27,7 +28,7 @@ import {
   pickNextAdaptiveCard,
   createInitialSessionDeck,
 } from '@/lib/play/play-sampler';
-import type { PlayPoolsExtended } from '@/lib/play/play-sampler';
+import type { PlayPoolsExtended, RegionParam } from '@/lib/play/play-sampler';
 import { calculateResultEstimate } from '@/lib/play/result-estimate';
 import type { ResultEstimate } from '@/lib/play/result-estimate';
 import PlayCard from './PlayCard';
@@ -43,7 +44,7 @@ interface Labels {
 interface PlayPageProps {
   initialDeck: Person[];
   locale: string;
-  region: 'kz' | 'global';
+  region: RegionParam;
   labels: Labels;
 }
 
@@ -51,7 +52,7 @@ function appendAdaptiveCard(
   deck:    Person[],
   cardIds: string[],
   pools:   PlayPoolsExtended,
-  region:  'kz' | 'global',
+  region:  RegionParam,
   nextIndex: number,
 ): { deck: Person[]; cardIds: string[] } {
   const profile = getOrCreateAdaptiveProfile();
@@ -84,6 +85,7 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
   const [session, setSession] = useState<PlaySession | null>(null);
   const [pools, setPools] = useState<PlayPoolsExtended | null>(null);
   const startedAt = useRef<number>(Date.now());
+  const router = useRouter();
 
   // Build the aggregated, non-personal analytics payload. estimate-bearing events
   // (result_*/continue/share/restart) pass the computed estimate; session/checkpoint
@@ -249,9 +251,8 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
     track('continue_clicked', buildAnalytics(prevProfile, session?.sessionId, calculateResultEstimate(prevProfile)));
     clearSession(locale, region);
     const answeredIds = new Set(getOrCreateAdaptiveProfile().answers.map(a => a.qid));
-    const samplerRegion = region === 'kz' ? 'kz' : undefined;
     const deck = pools
-      ? createInitialSessionDeck(pools, samplerRegion, answeredIds)
+      ? createInitialSessionDeck(pools, region, answeredIds)
       : initialDeck;
     const fresh = createNewSession(locale, deck, region);
     saveSession(fresh, region);
@@ -259,16 +260,17 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
     startedAt.current = Date.now();
   }
 
-  // Start new test: clear session AND cumulative profile (confirmed in PlayResult).
+  // Start new test: clear session AND cumulative profile, then send the user back to
+  // onboarding (region selection is mandatory). We do NOT immediately create a new
+  // session in the old region — the new test begins only after the user re-picks a
+  // region. Clearing the profile wipes stats/answers/answeredQids so the next test's
+  // analysis starts clean and never reuses the previous result.
   function handleReset() {
     const prevProfile = getOrCreateAdaptiveProfile();
     track('restart_clicked', buildAnalytics(prevProfile, session?.sessionId, calculateResultEstimate(prevProfile)));
     clearSession(locale, region);
     clearAdaptiveProfile();
-    const fresh = createNewSession(locale, initialDeck, region);
-    saveSession(fresh, region);
-    setSession(fresh);
-    startedAt.current = Date.now();
+    router.push('/onboarding');
   }
 
   if (!session) {

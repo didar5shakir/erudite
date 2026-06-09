@@ -1,14 +1,15 @@
 import type { Person, PlaySession } from './types';
 import { CALIB_SIZE, SESSION_CARD_COUNT } from './play-sampler';
+import type { RegionParam } from './play-sampler';
 
-export function getStorageKey(locale: string, region: 'kz' | 'global'): string {
+export function getStorageKey(locale: string, region: RegionParam): string {
   return `erudite:play:v6:${locale}:${region}`;
 }
 
 export function createNewSession(
   locale: string,
   deck: Person[],
-  region: 'kz' | 'global',
+  region: RegionParam,
 ): PlaySession {
   const now = new Date().toISOString();
   let sessionId: string;
@@ -32,13 +33,13 @@ export function createNewSession(
   };
 }
 
-export function saveSession(session: PlaySession, region: 'kz' | 'global'): void {
+export function saveSession(session: PlaySession, region: RegionParam): void {
   if (typeof window === 'undefined') return;
   const updated: PlaySession = { ...session, updatedAt: new Date().toISOString() };
   localStorage.setItem(getStorageKey(session.locale, region), JSON.stringify(updated));
 }
 
-export function loadSession(locale: string, region: 'kz' | 'global'): PlaySession | null {
+export function loadSession(locale: string, region: RegionParam): PlaySession | null {
   if (typeof window === 'undefined') return null;
 
   const key = getStorageKey(locale, region);
@@ -81,7 +82,7 @@ export function loadSession(locale: string, region: 'kz' | 'global'): PlaySessio
   return parsed as PlaySession;
 }
 
-export function clearSession(locale: string, region: 'kz' | 'global'): void {
+export function clearSession(locale: string, region: RegionParam): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(getStorageKey(locale, region));
 }
