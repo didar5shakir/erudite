@@ -1,3 +1,5 @@
+import type { Person } from './types';
+
 type LocalizedLabel = { en: string; ru: string; kk: string; ru_female?: string };
 
 // ── Occupations ───────────────────────────────────────────────────────────────
@@ -19,7 +21,7 @@ export const OCCUPATION_LABELS: Record<string, LocalizedLabel> = {
   "PAINTER":                  { en: "Painter",                   ru: "Живописец",                      kk: "Суретші" },
   "COMPOSER":                 { en: "Composer",                  ru: "Композитор",                     kk: "Композитор" },
   "SOCIAL ACTIVIST":          { en: "Social Activist",           ru: "Общественный активист",          kk: "Қоғам қайраткері" },
-  "COMPANION":                { en: "Companion",                 ru: "Сподвижник",                     kk: "Сахаба" }, // REVIEW — чаще сподвижник пророка; может быть другой контекст
+  "COMPANION":                { en: "Public Figure",             ru: "Публичная персона",              kk: "Танымал тұлға" }, // Stage 6.7: was kk "Сахаба" (wrong — these are consorts/partners, not Islamic companions)
   "TENNIS PLAYER":            { en: "Tennis Player",             ru: "Теннисист",                      kk: "Теннисші",       ru_female: "Теннисистка" },
   "PHYSICIST":                { en: "Physicist",                 ru: "Физик",                          kk: "Физик" },
   "BASKETBALL PLAYER":        { en: "Basketball Player",         ru: "Баскетболист",                   kk: "Баскетболшы" },
@@ -334,6 +336,53 @@ const SUBDOMAIN_ZONE_LABELS: Record<string, L3> = {
   magic:           { ru: 'Иллюзионисты',      kk: 'Иллюзионистер',      en: 'Magicians' },
   adult:           { ru: 'Взрослый контент',  kk: 'Ересектерге арналған', en: 'Adult' },
 };
+
+// ── Card subtitle category (Stage 6.7) ──────────────────────────────────────────
+// Neutral, GENDERLESS field labels for the card subtitle, so famous women are never
+// shown a masculine person-noun. SINGULAR field nouns for the entertainment subdomains
+// (the SUBDOMAIN_ZONE_LABELS versions are plural person-nouns like "Актёры"); sports
+// subdomains already read as neutral fields (Футбол, Бокс…) so they're reused as-is.
+const CATEGORY_SUBDOMAIN: Record<string, L3> = {
+  actor:           { ru: 'Кино',           kk: 'Кино',         en: 'Film' },
+  film_director:   { ru: 'Кино',           kk: 'Кино',         en: 'Film' },
+  producer:        { ru: 'Кино',           kk: 'Кино',         en: 'Film' },
+  singer:          { ru: 'Музыка',         kk: 'Музыка',       en: 'Music' },
+  musician:        { ru: 'Музыка',         kk: 'Музыка',       en: 'Music' },
+  composer:        { ru: 'Музыка',         kk: 'Музыка',       en: 'Music' },
+  comedian:        { ru: 'Юмор',           kk: 'Әзіл',         en: 'Comedy' },
+  dancer:          { ru: 'Танцы',          kk: 'Би',           en: 'Dance' },
+  modeling:        { ru: 'Мода',           kk: 'Сән',          en: 'Fashion' },
+  tv_presenter:    { ru: 'Телевидение',    kk: 'Теледидар',    en: 'Television' },
+  digital_creator: { ru: 'Блогинг',        kk: 'Блогинг',      en: 'Digital' },
+  celebrity:       { ru: 'Знаменитость',   kk: 'Атақты тұлға', en: 'Celebrity' },
+  magic:           { ru: 'Иллюзии',        kk: 'Иллюзия',      en: 'Magic' },
+  sports_coaching: { ru: 'Спорт',          kk: 'Спорт',        en: 'Sports' },
+};
+
+// Occupation-level category overrides for figures whose derived domain is misleading as a
+// card subtitle: COMPANION → domain=religion (consorts/partners, not clerics); NOBLEMAN →
+// domain=politics (generic aristocrats, not rulers — rulers are POLITICIAN). Neutral & genderless.
+const OCCUPATION_CATEGORY_OVERRIDE: Record<string, L3> = {
+  COMPANION: { ru: 'Публичная персона', kk: 'Танымал тұлға', en: 'Public Figure' },
+  NOBLEMAN:  { ru: 'Аристократия',      kk: 'Ақсүйектер',    en: 'Nobility' },
+};
+
+// Neutral category subtitle for a person card. Order: occupation override (misleading derived
+// domain) → singular subdomain field → domain field → occupation label fallback (rare:
+// unknown domain & no subdomain). DISPLAY-ONLY; does not touch sampler/result/analytics.
+export function getCategoryLabel(person: Person, locale: string): string {
+  if (person.occupation && OCCUPATION_CATEGORY_OVERRIDE[person.occupation]) {
+    return pickL3(OCCUPATION_CATEGORY_OVERRIDE, person.occupation, locale);
+  }
+  const sub = person.subdomain;
+  if (sub) {
+    if (CATEGORY_SUBDOMAIN[sub])     return pickL3(CATEGORY_SUBDOMAIN, sub, locale);
+    if (SUBDOMAIN_ZONE_LABELS[sub])  return pickL3(SUBDOMAIN_ZONE_LABELS, sub, locale);
+  }
+  if (DOMAIN_ZONE_LABELS[person.domain]) return pickL3(DOMAIN_ZONE_LABELS, person.domain, locale);
+  // Long tail (unknown domain, no subdomain): keep the occupation label (with ru_female).
+  return getOccupationLabel(person.occupation, locale, person.gender);
+}
 
 const MACRO_REGION_ZONE_LABELS: Record<string, L3> = {
   usa_canada:        { ru: 'США и Канада',           kk: 'АҚШ және Канада',                  en: 'USA & Canada' },

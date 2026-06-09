@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 
 import type { ResultEstimate, ZoneStats, LevelLabel } from '@/lib/play/result-estimate';
 import { getContinueMilestone, getAccuracyTier } from '@/lib/play/result-estimate';
-import { formatZoneLabel, getOccupationLabel, getCountryLabel } from '@/lib/play/localized-labels';
+import { formatZoneLabel, getCategoryLabel, getCountryLabel } from '@/lib/play/localized-labels';
 import type { Person, Answer, AnswerType } from '@/lib/play/types';
 
 interface PlayResultProps {
@@ -268,7 +268,7 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
                       {meta.icon} {t(grp.answer)} · {grp.items.length}
                     </p>
                     {grp.items.map(p => {
-                      const occ = getOccupationLabel(p.occupation, locale, p.gender);
+                      const occ = getCategoryLabel(p, locale);
                       const country = getCountryLabel(p.bplace_country, locale);
                       const meta2 = [occ, country].filter(Boolean).join(' • ');
                       return (
