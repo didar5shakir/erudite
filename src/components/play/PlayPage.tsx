@@ -31,6 +31,7 @@ import {
 import type { PlayPoolsExtended, RegionParam } from '@/lib/play/play-sampler';
 import { calculateResultEstimate } from '@/lib/play/result-estimate';
 import type { ResultEstimate } from '@/lib/play/result-estimate';
+import type { InviterSummary } from '@/lib/play/challenge';
 import PlayCard from './PlayCard';
 import PlayResult from './PlayResult';
 
@@ -47,6 +48,7 @@ interface PlayPageProps {
   region: RegionParam;
   regionExplicit: boolean;        // true if the URL carried an explicit ?region (mandatory-selection gate)
   countryBoost?: string | null;   // IP country boost (server-resolved); preserved across continue
+  inviterSummary?: InviterSummary | null;  // friendly "compare with a friend" payload (?c=…); result-only
   labels: Labels;
 }
 
@@ -83,7 +85,7 @@ function appendAdaptiveCard(
   };
 }
 
-export default function PlayPage({ initialDeck, locale, region, regionExplicit, countryBoost, labels }: PlayPageProps) {
+export default function PlayPage({ initialDeck, locale, region, regionExplicit, countryBoost, inviterSummary, labels }: PlayPageProps) {
   const [session, setSession] = useState<PlaySession | null>(null);
   const [pools, setPools] = useState<PlayPoolsExtended | null>(null);
   const startedAt = useRef<number>(Date.now());
@@ -296,6 +298,8 @@ export default function PlayPage({ initialDeck, locale, region, regionExplicit, 
         <PlayResult
           estimate={estimate}
           locale={locale}
+          region={region}
+          inviterSummary={inviterSummary}
           cards={session.deck}
           answers={session.answers}
           onContinue={handleContinue}

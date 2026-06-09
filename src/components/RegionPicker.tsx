@@ -19,7 +19,7 @@ const REGION_PARAM: Record<RegionId, string> = {
   middle_east_north_africa: 'middle_east_north_africa',
 }
 
-export default function RegionPicker({ regionIds }: { regionIds: RegionId[] }) {
+export default function RegionPicker({ regionIds, challenge }: { regionIds: RegionId[]; challenge?: string }) {
   const t = useTranslations('regions')
   const router = useRouter()
 
@@ -28,7 +28,10 @@ export default function RegionPicker({ regionIds }: { regionIds: RegionId[] }) {
     // Start the real game with the explicit selected region. KZ/Central Asia maps to the
     // curated 'kz' path and 'other' to 'global'; every other region passes its own id so
     // /play applies the matching macro-region boost. Explicit selection always wins.
-    router.push({ pathname: '/play', query: { region: REGION_PARAM[id] } })
+    // Forward an optional ?c= challenge payload so it survives into the result screen.
+    const query: Record<string, string> = { region: REGION_PARAM[id] }
+    if (challenge) query.c = challenge
+    router.push({ pathname: '/play', query })
   }
 
   return (

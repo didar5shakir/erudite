@@ -3,14 +3,18 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 
-import type { ResultEstimate, ZoneStats, LevelLabel } from '@/lib/play/result-estimate';
+import type { ResultEstimate, ZoneStats, LevelLabel, ZoneAxis } from '@/lib/play/result-estimate';
 import { getContinueMilestone, getAccuracyTier } from '@/lib/play/result-estimate';
 import { formatZoneLabel, getCategoryLabel, getCountryLabel } from '@/lib/play/localized-labels';
+import { encodeChallenge, type InviterSummary } from '@/lib/play/challenge';
+import type { RegionParam } from '@/lib/play/play-sampler';
 import type { Person, Answer, AnswerType } from '@/lib/play/types';
 
 interface PlayResultProps {
   estimate:   ResultEstimate;
   locale:     string;
+  region:     RegionParam;
+  inviterSummary?: InviterSummary | null;  // friendly compare payload (?c=…); additive, result-only
   cards:      Person[];                    // current-session deck (carries display names)
   answers:    Record<string, Answer>;      // current-session answers
   onContinue: () => void;
@@ -50,7 +54,7 @@ const ANSWER_META: Record<AnswerType, { icon: string; color: string }> = {
   dont_know: { icon: '✕', color: 'text-rose-700' },
 };
 
-export default function PlayResult({ estimate, locale, cards, answers, onContinue, onReset, onShare }: PlayResultProps) {
+export default function PlayResult({ estimate, locale, region, inviterSummary, cards, answers, onContinue, onReset, onShare }: PlayResultProps) {
   const t = useTranslations('play');
   const [showDetails, setShowDetails] = useState(false);
   const [showAnswers, setShowAnswers] = useState(false);
@@ -96,6 +100,50 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
         })
         .catch(() => { /* noop */ });
     }
+  }
+
+  // "Compare with a friend": encode this result into a link to /<locale>/onboarding?c=…
+  // (friend picks their own region, takes their own test, then sees the comparison).
+  function handleChallenge() {
+    if (typeof window === 'undefined') return;
+    const summary: InviterSummary = {
+      estimate: publicEstimate, level: levelLabel, answered: answeredCount,
+      know: knowCount, heard: heardCount, dontKnow: dontKnowCount,
+      rangeLow, rangeHigh,
+      zones: displayStrongZones.slice(0, 4).map(z => `${z.axis}:${z.tag}`),
+      region, locale,
+    };
+    const url = `${window.location.origin}/${locale}/onboarding?c=${encodeChallenge(summary)}`;
+    const text = t('challenge_share_text', { estimate: formatNumber(publicEstimate), total: formatNumber(universeTotal) });
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      navigator.share({ text, url }).catch(() => { /* cancelled */ });
+    } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(url)
+        .then(() => { setToast(t('challenge_copied')); window.setTimeout(() => setToast(null), 3500); })
+        .catch(() => { /* noop */ });
+    }
+  }
+
+  // Comparison data (only when opened from a challenge link).
+  const youZones = displayStrongZones.slice(0, 4).map(z => `${z.axis}:${z.tag}`);
+  const inviterZoneSet = new Set(inviterSummary?.zones ?? []);
+  const sharedZones = youZones.filter(z => inviterZoneSet.has(z));
+  const uniqueZones = youZones.filter(z => !inviterZoneSet.has(z));
+  const diff = inviterSummary ? publicEstimate - inviterSummary.estimate : 0;
+  const diffLabel = !inviterSummary ? ''
+    : diff > 0 ? t('compare_diff_ahead',  { diff: formatNumber(diff) })
+    : diff < 0 ? t('compare_diff_behind', { diff: formatNumber(-diff) })
+    : t('compare_diff_equal');
+
+  function zoneChip(z: string) {
+    const i = z.indexOf(':');
+    const axis = z.slice(0, i) as ZoneAxis;
+    const tag  = z.slice(i + 1);
+    return (
+      <span key={z} className="rounded-full px-3 py-1 text-xs bg-emerald-deep/10 text-emerald-deep">
+        {formatZoneLabel(axis, tag, locale)}
+      </span>
+    );
   }
 
   function renderZones(zones: ZoneStats[], emptyKey: string, color: string) {
@@ -154,6 +202,35 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
           <p className="text-muted/80 text-xs pt-1">{t('result_approx_note')}</p>
         </div>
       </div>
+
+      {/* Friendly comparison (only from a challenge link) — additive, never disrupts normal result */}
+      {inviterSummary && (
+        <div className="bg-white border border-divider rounded-2xl px-8 py-5 text-left space-y-3">
+          <p className="text-graphite font-semibold text-sm">{t('compare_title')}</p>
+          <div className="flex justify-between text-sm">
+            <span className="text-muted">{t('compare_you')}</span>
+            <span className="text-graphite font-medium">{formatNumber(publicEstimate)} · {t(LEVEL_KEY[levelLabel])}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-muted">{t('compare_friend')}</span>
+            <span className="text-graphite font-medium">{formatNumber(inviterSummary.estimate)} · {t(LEVEL_KEY[inviterSummary.level])}</span>
+          </div>
+          <p className="text-emerald-deep text-sm font-medium">{diffLabel}</p>
+          {sharedZones.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-muted text-xs">{t('compare_shared')}</p>
+              <div className="flex flex-wrap gap-2">{sharedZones.map(zoneChip)}</div>
+            </div>
+          )}
+          {uniqueZones.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-muted text-xs">{t('compare_unique')}</p>
+              <div className="flex flex-wrap gap-2">{uniqueZones.map(zoneChip)}</div>
+            </div>
+          )}
+          <p className="text-muted/80 text-xs">{t('challenge_disclaimer')}</p>
+        </div>
+      )}
 
       {/* Accuracy note */}
       <p className="text-muted text-xs px-2">
@@ -227,6 +304,12 @@ export default function PlayResult({ estimate, locale, cards, answers, onContinu
           className="w-full py-3 rounded-xl border border-divider bg-white text-graphite font-medium hover:bg-divider/40 active:bg-divider/60 transition-colors"
         >
           {t('btn_share')}
+        </button>
+        <button
+          onClick={handleChallenge}
+          className="w-full py-3 rounded-xl border border-divider bg-white text-graphite font-medium hover:bg-divider/40 active:bg-divider/60 transition-colors"
+        >
+          {t('challenge_button')}
         </button>
         <button
           onClick={() => setShowAnswers(true)}

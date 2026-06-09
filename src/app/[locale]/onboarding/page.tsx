@@ -1,23 +1,27 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server'
-import { routing } from '@/i18n/routing'
 import { getOrderedRegionIds } from '@/data/regions'
+import { decodeChallenge } from '@/lib/play/challenge'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import RegionPicker from '@/components/RegionPicker'
 
-export function generateStaticParams() {
-  return routing.locales.map((locale) => ({ locale }))
-}
-
 export default async function OnboardingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
   const { locale } = await params
   setRequestLocale(locale)
 
   const t = await getTranslations()
   const regionIds = getOrderedRegionIds(locale)
+
+  // Optional "compare with a friend" link (?c=…). Forward the raw param to RegionPicker so
+  // it survives region selection into /play; show the invite line only when it decodes.
+  const { c } = await searchParams
+  const challenge = typeof c === 'string' ? c : undefined
+  const isChallenge = decodeChallenge(challenge) !== null
 
   return (
     <main className="min-h-screen bg-cream flex flex-col animate-fade-up">
@@ -38,11 +42,17 @@ export default async function OnboardingPage({
             </p>
           </div>
 
+          {isChallenge && (
+            <p className="text-sm md:text-base text-emerald-deep bg-emerald-deep/5 border border-emerald-deep/15 rounded-xl px-4 py-3">
+              {t('play.challenge_invite')}
+            </p>
+          )}
+
           <p className="text-sm md:text-base leading-relaxed text-muted border-l-2 border-divider pl-4">
             {t('onboarding.intro')}
           </p>
 
-          <RegionPicker regionIds={regionIds} />
+          <RegionPicker regionIds={regionIds} challenge={challenge} />
 
         </div>
       </div>

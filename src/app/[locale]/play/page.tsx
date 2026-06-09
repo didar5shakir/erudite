@@ -7,6 +7,7 @@ import { headers } from 'next/headers';
 import { createInitialSessionDeck } from '@/lib/play/play-sampler';
 import type { RegionParam } from '@/lib/play/play-sampler';
 import { resolveRegionContext, isExplicitRegionParam } from '@/lib/play/region-context';
+import { decodeChallenge } from '@/lib/play/challenge';
 import type { PlayPools } from '@/lib/play/types';
 import PlayPage from '@/components/play/PlayPage';
 
@@ -35,7 +36,7 @@ export default async function Page({
   // explicit region) must NOT silently start a game via IP — PlayPage redirects to
   // /onboarding unless a resumable session exists. So for the non-explicit case we use the
   // plain locale fallback (no IP) just for the session-key lookup.
-  const { region } = await searchParams;
+  const { region, c } = await searchParams;
   const fallback: RegionParam = locale === 'kk' ? 'kz' : 'global';
   const regionExplicit = isExplicitRegionParam(region);
 
@@ -45,6 +46,11 @@ export default async function Page({
     const ipCountry = (await headers()).get('x-vercel-ip-country');
     ({ region: resolvedRegion, countryBoost } = resolveRegionContext(region, ipCountry, fallback));
   }
+
+  // Optional friendly "compare with a friend" payload (?c=…). Decodes fail-safe to null
+  // (invalid/oversized → ignored). Display-only: shown on the result screen, never affects
+  // the test/sampler/estimate.
+  const inviterSummary = decodeChallenge(c);
 
   const pools = loadPools();
   const deck = createInitialSessionDeck(pools, resolvedRegion, undefined, countryBoost);
@@ -58,6 +64,7 @@ export default async function Page({
       region={resolvedRegion}
       regionExplicit={regionExplicit}
       countryBoost={countryBoost}
+      inviterSummary={inviterSummary}
       labels={{
         know:      t('know'),
         heard:     t('heard'),
