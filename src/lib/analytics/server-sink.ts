@@ -31,6 +31,7 @@ const DB_COLUMNS = [
   'range_high',
   'level',
   'top_zones',
+  'ip_country_code',   // server-derived (route) from x-vercel-ip-country; never client-sent
 ] as const;
 
 // `safe` is the already-whitelisted payload from the route. Inserts a single row;

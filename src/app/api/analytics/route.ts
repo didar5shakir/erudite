@@ -58,11 +58,19 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // Whitelist only — strips any unexpected/PII fields a client might send.
+  // NB: ip_country_code is intentionally NOT in ALLOWED_FIELDS, so any client-sent value
+  // is stripped here and can never reach the DB.
   const safe: Record<string, unknown> = {};
   for (const key of ALLOWED_FIELDS) {
     if (obj[key] !== undefined) safe[key] = obj[key];
   }
   if (typeof safe.timestamp !== 'string') safe.timestamp = new Date().toISOString();
+
+  // Country code is SERVER-DERIVED only, from Vercel's geo header — never from the client.
+  // Stored as a 2-letter ISO code (e.g. DE/KZ); raw IP is never read or stored. Missing or
+  // malformed header → left unset → NULL. Set after whitelisting so it is authoritative.
+  const cc = request.headers.get('x-vercel-ip-country');
+  if (cc && /^[A-Z]{2}$/.test(cc)) safe.ip_country_code = cc;
 
   // ── SINK (6.3b): Supabase insert (server-only); console fallback if env missing. ──
   // Awaited so the serverless function does not terminate before the write completes.
