@@ -141,7 +141,7 @@ const SEA_COUNTRIES = [
   'Myanmar (Burma)', 'Cambodia', 'Laos', 'Brunei',
 ];
 
-const REGION_BOOST: Partial<Record<RegionParam, RegionBoost>> = {
+export const REGION_BOOST: Partial<Record<RegionParam, RegionBoost>> = {
   russia_cis:               { macroRegions: ['ru_cis'],                    cap: 8 },
   europe:                   { macroRegions: ['western_europe'],            cap: 8, exclude: ['United Kingdom'] },
   north_america:            { macroRegions: ['usa_canada'],                cap: 4, exclude: ['United States'] },
@@ -191,13 +191,21 @@ function createCalibrationBlock(
   kzCaIds: Set<string>,
   region: RegionParam,
   usedIds: Set<string>,
+  countryBoost?: string | null,
 ): Person[] {
   // Generic selected-region boost config (undefined for 'kz' curated path and 'global').
   const boost = (region !== 'kz' && region !== 'global') ? REGION_BOOST[region] : undefined;
   const boostMacros  = new Set<string>(boost?.macroRegions ?? []);
   const boostExclude = new Set<string>(boost?.exclude ?? []);
-  const isBoostMember = (p: Person): boolean =>
+  // Optional IP country boost (Stage 6.6) — never on the curated kz path. The user's own
+  // country is always a boost member (bypasses the macro exclude list — they're locals),
+  // and a present country raises the regional cap to 8.
+  const country = (region !== 'kz' && countryBoost) ? countryBoost : null;
+  const isCountryMember = (p: Person): boolean => !!country && p.bplace_country === country;
+  const isMacroMember   = (p: Person): boolean =>
     !!boost && boostMacros.has(p.macro_region) && !boostExclude.has(p.bplace_country);
+  const isBoostMember   = (p: Person): boolean => isCountryMember(p) || isMacroMember(p);
+  const boostCap = country ? 8 : (boost?.cap ?? 0);
   let boostCount = 0;
   // Candidate pool: deduped by QID, no hard- or soft-sensitive, never relaxed
   const seenQids = new Set<string>();
@@ -252,11 +260,12 @@ function createCalibrationBlock(
     // (incl. excluded USA/UK and all other regions) is capped at CALIB_REGION_MAX so
     // global coverage is preserved.
     if (!flags.relaxRegion && region !== 'kz') {
-      if (boost && isBoostMember(p)) {
-        if (boostCount >= boost.cap) return true;
-      } else if ((macroRegionCount[reg] ?? 0) >= CALIB_REGION_MAX) {
-        return true;
-      }
+      // Every macro region is capped at CALIB_REGION_MAX (diversity / global coverage) —
+      // this also bounds the boosted macro incl. its excluded members (e.g. a UK card the
+      // probe might add). Boost members are additionally capped at the (possibly smaller)
+      // boost cap, so e.g. North America yields ≤4 Canada (boost) but still ≤8 usa_canada.
+      if ((macroRegionCount[reg] ?? 0) >= CALIB_REGION_MAX) return true;
+      if (isBoostMember(p) && boostCount >= boostCap) return true;
     }
     if (kzCaIds.has(p.wikidata_id) && kzCaCount >= CALIB_KZ_CA_MAX) return true;
     return false;
@@ -318,14 +327,34 @@ function createCalibrationBlock(
     }
   }
 
-  // Phase 1b (non-kz boosted regions): front-load up to boost.cap selected-region cards
-  // into the EASY/MEDIUM tier ONLY (same rank caps as calibration) — never globally-hard.
-  // These are normal cards (NOT isRegionalSeed): they shift the country mix, not the
-  // difficulty mix, and the result estimate is unchanged. domain/subdomain/era balance
-  // still applies (isConstrained); the boostCount cap prevents exceeding the per-region cap.
+  // Phase 1a (non-kz, IP country boost): front-load the user's OWN country up to the cap.
+  // (A) easy/medium country cards are NORMAL (globally recognizable, counted in estimate).
+  // (B) globally-hard country cards are marked isRegionalSeed (locally easy but globally
+  // obscure → excluded from the global estimate, like kz_ca), used only to top up when the
+  // country's easy/medium run out. Priority: country e/m → country hard → macro → global.
+  if (country) {
+    const countryEM = shuffled.filter(p =>
+      p.bplace_country === country &&
+      ((p.difficulty_bucket === 'easy'   && p.global_rank <= CALIB_EASY_RANK_MAX) ||
+       (p.difficulty_bucket === 'medium' && p.global_rank <= CALIB_MEDIUM_RANK_MAX)));
+    for (const p of countryEM) {
+      if (boostCount >= boostCap || block.length >= CALIB_SIZE) break;
+      if (!isConstrained(p)) addCard(p);
+    }
+    const countryHard = shuffled.filter(p => p.bplace_country === country && p.difficulty_bucket === 'hard');
+    for (const p of countryHard) {
+      if (boostCount >= boostCap || block.length >= CALIB_SIZE) break;
+      if (!isConstrained(p)) addCard(p, true);   // local seed: excluded from global estimate
+    }
+  }
+
+  // Phase 1b (non-kz boosted regions): fill the REMAINING cap with macro-region cards in
+  // the EASY/MEDIUM tier ONLY (same rank caps) — never globally-hard. Normal cards (NOT
+  // isRegionalSeed): they shift the country mix, not the difficulty mix, so the estimate is
+  // unchanged. domain/subdomain/era balance still applies; boostCount cap is shared with 1a.
   if (boost) {
     const eligible = shuffled.filter(p =>
-      isBoostMember(p) &&
+      isMacroMember(p) &&
       ((p.difficulty_bucket === 'easy'   && p.global_rank <= CALIB_EASY_RANK_MAX) ||
        (p.difficulty_bucket === 'medium' && p.global_rank <= CALIB_MEDIUM_RANK_MAX)));
     const prefer = new Set<string>(boost.prefer ?? []);
@@ -335,7 +364,7 @@ function createCalibrationBlock(
       (p.difficulty_bucket === 'easy' ? 0 : 1);
     eligible.sort((a, b) => tier(a) - tier(b));
     for (const p of eligible) {
-      if (boostCount >= boost.cap) break;
+      if (boostCount >= boostCap) break;
       if (block.length >= CALIB_SIZE) break;
       if (!isConstrained(p)) addCard(p);
     }
@@ -354,14 +383,14 @@ function createCalibrationBlock(
   ];
   for (const [diff, target, maxRank] of diffTargets) {
     for (const p of shuffled) {
-      if (p2Count(diff) >= target) break;
+      if (block.length >= CALIB_SIZE || p2Count(diff) >= target) break;
       if (p.difficulty_bucket === diff &&
           p.global_rank <= maxRank &&
           (p.era_bucket ?? 'unknown') !== 'unknown' &&
           !isConstrained(p)) addCard(p);
     }
     for (const p of shuffled) {
-      if (p2Count(diff) >= target) break;
+      if (block.length >= CALIB_SIZE || p2Count(diff) >= target) break;
       if (p.difficulty_bucket === diff && p.global_rank <= maxRank && !isConstrained(p)) addCard(p);
     }
   }
@@ -394,7 +423,7 @@ function createCalibrationBlock(
 
 // ── Main function ─────────────────────────────────────────────────────────────
 
-export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: RegionParam): Person[] {
+export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: RegionParam, countryBoost?: string | null): Person[] {
   const safe: PlayPoolsExtended = {
     top_30000: pools.top_30000.filter(p => !isSensitivePerson(p)),
     ru_quota:  pools.ru_quota.filter(p  => !isSensitivePerson(p)),
@@ -407,7 +436,7 @@ export function createMixedSessionDeck(pools: PlayPoolsExtended, region?: Region
   const usedIds = new Set<string>();
 
   // Cards 1–30: balanced calibration block
-  const calib = createCalibrationBlock(safe, kzCaIds, region ?? 'global', usedIds);
+  const calib = createCalibrationBlock(safe, kzCaIds, region ?? 'global', usedIds, countryBoost);
 
   // Cards 31–100: pool-based fill (usedIds already has calib QIDs)
   const remaining: Person[] = [];
@@ -464,6 +493,7 @@ export function createInitialSessionDeck(
   pools: PlayPoolsExtended,
   region?: RegionParam,
   excludeIds?: ReadonlySet<string>,
+  countryBoost?: string | null,
 ): Person[] {
   const safe: PlayPoolsExtended = {
     top_30000: pools.top_30000.filter(p => !isSensitivePerson(p)),
@@ -476,7 +506,7 @@ export function createInitialSessionDeck(
   // Seeding usedIds with excludeIds keeps already-answered QIDs (cumulative profile
   // history) out of the calibration block on continuation.
   const usedIds = new Set<string>(excludeIds);
-  return createCalibrationBlock(safe, kzCaIds, region ?? 'global', usedIds);
+  return createCalibrationBlock(safe, kzCaIds, region ?? 'global', usedIds, countryBoost);
 }
 
 // ── Adaptive candidate pool ───────────────────────────────────────────────────

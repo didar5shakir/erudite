@@ -157,7 +157,7 @@ const SUBDOMAIN_MAP: Record<string, string> = {
 
 // ── Macro region map ──────────────────────────────────────────────────────────
 
-const MACRO_REGION_MAP: Record<string, MacroRegion> = {
+export const MACRO_REGION_MAP: Record<string, MacroRegion> = {
   'United States': 'usa_canada', 'Canada': 'usa_canada',
   'United Kingdom': 'western_europe', 'Germany': 'western_europe',
   'France': 'western_europe', 'Italy': 'western_europe',

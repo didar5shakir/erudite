@@ -45,6 +45,7 @@ interface PlayPageProps {
   initialDeck: Person[];
   locale: string;
   region: RegionParam;
+  countryBoost?: string | null;   // IP country boost (server-resolved); preserved across continue
   labels: Labels;
 }
 
@@ -81,7 +82,7 @@ function appendAdaptiveCard(
   };
 }
 
-export default function PlayPage({ initialDeck, locale, region, labels }: PlayPageProps) {
+export default function PlayPage({ initialDeck, locale, region, countryBoost, labels }: PlayPageProps) {
   const [session, setSession] = useState<PlaySession | null>(null);
   const [pools, setPools] = useState<PlayPoolsExtended | null>(null);
   const startedAt = useRef<number>(Date.now());
@@ -252,7 +253,7 @@ export default function PlayPage({ initialDeck, locale, region, labels }: PlayPa
     clearSession(locale, region);
     const answeredIds = new Set(getOrCreateAdaptiveProfile().answers.map(a => a.qid));
     const deck = pools
-      ? createInitialSessionDeck(pools, region, answeredIds)
+      ? createInitialSessionDeck(pools, region, answeredIds, countryBoost)
       : initialDeck;
     const fresh = createNewSession(locale, deck, region);
     saveSession(fresh, region);

@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { headers } from 'next/headers';
 
-import { createInitialSessionDeck, normalizeRegionParam } from '@/lib/play/play-sampler';
+import { createInitialSessionDeck } from '@/lib/play/play-sampler';
 import type { RegionParam } from '@/lib/play/play-sampler';
+import { resolveRegionContext } from '@/lib/play/region-context';
 import type { PlayPools } from '@/lib/play/types';
 import PlayPage from '@/components/play/PlayPage';
 
@@ -28,14 +30,16 @@ export default async function Page({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  // Explicit ?region=<id> always wins; fall back to a locale default only when absent
-  // or unrecognized. No IP/auto-detect (future autodetect must only fill this fallback).
+  // Explicit ?region=<id> always wins. IP country (x-vercel-ip-country, server-only)
+  // only adds a country boost when compatible with the selection, or drives the macro
+  // fallback when no region was selected. The country code never reaches the client.
   const { region } = await searchParams;
+  const ipCountry = (await headers()).get('x-vercel-ip-country');
   const fallback: RegionParam = locale === 'kk' ? 'kz' : 'global';
-  const resolvedRegion: RegionParam = normalizeRegionParam(region, fallback);
+  const { region: resolvedRegion, countryBoost } = resolveRegionContext(region, ipCountry, fallback);
 
   const pools = loadPools();
-  const deck = createInitialSessionDeck(pools, resolvedRegion);
+  const deck = createInitialSessionDeck(pools, resolvedRegion, undefined, countryBoost);
 
   const t = await getTranslations('play');
 
@@ -44,6 +48,7 @@ export default async function Page({
       initialDeck={deck}
       locale={locale}
       region={resolvedRegion}
+      countryBoost={countryBoost}
       labels={{
         know:      t('know'),
         heard:     t('heard'),

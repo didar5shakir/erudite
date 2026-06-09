@@ -138,5 +138,88 @@ console.log('\n── G: kz/global regression ──');
   check('G: global → every macro_region ≤ 8 (diversity cap)', maxAny <= 8, `max=${maxAny}`);
 }
 
+// ── H: IP country boost (Stage 6.6) ─────────────────────────────────────────
+console.log('\n── H: country boost ──');
+const decksC = (region, country, n = RUNS) => {
+  const out = []; for (let i = 0; i < n; i++) out.push(createInitialSessionDeck(pools, region, undefined, country)); return out;
+};
+const cnt = (d, name) => d.filter(p => p.bplace_country === name).length;
+const nonSeedHard = (d) => d.filter(p => p.difficulty_bucket === 'hard' && p.isRegionalSeed !== true).length;
+const seeds = (d) => d.filter(p => p.isRegionalSeed === true);
+
+// H1: europe + Poland — Poland has ≥8 calib-eligible e/m → no hard seeds needed
+{
+  let maxWE = 0, minPL = 99, anySeed = false, maxNSH = 0;
+  for (const d of decksC('europe', 'Poland')) {
+    maxWE = Math.max(maxWE, d.filter(p => p.macro_region === 'western_europe').length);
+    minPL = Math.min(minPL, cnt(d, 'Poland'));
+    anySeed = anySeed || seeds(d).length > 0;
+    maxNSH = Math.max(maxNSH, nonSeedHard(d));
+  }
+  check('H1: europe+PL → western_europe ≤ 8', maxWE <= 8, `max=${maxWE}`);
+  check('H1: europe+PL → Poland present every run', minPL >= 1, `minPoland=${minPL}`);
+  check('H1: europe+PL → no isRegionalSeed (filled from easy/medium)', !anySeed);
+  check('H1: europe+PL → 0 non-seed hard', maxNSH === 0, `max=${maxNSH}`);
+}
+
+// H2: europe + Slovenia — only ~5 eligible e/m → tops up with globally-hard local SEEDS
+{
+  let seedOK = true, maxWE = 0, minSI = 99, maxNSH = 0, sawSeed = false;
+  for (const d of decksC('europe', 'Slovenia')) {
+    maxWE = Math.max(maxWE, d.filter(p => p.macro_region === 'western_europe').length);
+    minSI = Math.min(minSI, cnt(d, 'Slovenia'));
+    maxNSH = Math.max(maxNSH, nonSeedHard(d));
+    const sd = seeds(d);
+    if (sd.length) sawSeed = true;
+    // every seed must be a globally-hard Slovenian (local seed)
+    if (!sd.every(p => p.difficulty_bucket === 'hard' && p.bplace_country === 'Slovenia')) seedOK = false;
+  }
+  check('H2: europe+SI → western_europe ≤ 8', maxWE <= 8, `max=${maxWE}`);
+  check('H2: europe+SI → Slovenia present', minSI >= 1, `minSI=${minSI}`);
+  check('H2: europe+SI → hard local seeds used (escalation)', sawSeed);
+  check('H2: europe+SI → all seeds are globally-hard Slovenians', seedOK);
+  check('H2: europe+SI → 0 non-seed hard (local hard never counts as global)', maxNSH === 0, `max=${maxNSH}`);
+}
+
+// H3: east_asia + Japan
+{
+  let maxEA = 0, minJP = 99, maxNSH = 0;
+  for (const d of decksC('east_asia', 'Japan')) {
+    maxEA = Math.max(maxEA, d.filter(p => p.macro_region === 'east_asia').length);
+    minJP = Math.min(minJP, cnt(d, 'Japan'));
+    maxNSH = Math.max(maxNSH, nonSeedHard(d));
+  }
+  check('H3: east_asia+JP → east_asia ≤ 8', maxEA <= 8, `max=${maxEA}`);
+  check('H3: east_asia+JP → Japan present', minJP >= 1, `minJP=${minJP}`);
+  check('H3: east_asia+JP → 0 non-seed hard', maxNSH === 0);
+}
+
+// H4: country boost works even when macro region is 'global' (New Zealand → oceania)
+{
+  let minNZ = 99, maxOC = 0, maxNSH = 0;
+  for (const d of decksC('global', 'New Zealand')) {
+    minNZ = Math.min(minNZ, cnt(d, 'New Zealand'));
+    maxOC = Math.max(maxOC, d.filter(p => p.macro_region === 'oceania').length);
+    maxNSH = Math.max(maxNSH, nonSeedHard(d));
+  }
+  check('H4: global+NZ → New Zealand present (country boost in global)', minNZ >= 1, `minNZ=${minNZ}`);
+  check('H4: global+NZ → oceania ≤ 8 (diversity cap)', maxOC <= 8, `max=${maxOC}`);
+  check('H4: global+NZ → 0 non-seed hard', maxNSH === 0);
+}
+
+// H5: large country still capped at 8 (France)
+{
+  let maxFR = 0, maxWE = 0;
+  for (const d of decksC('europe', 'France')) {
+    maxFR = Math.max(maxFR, cnt(d, 'France'));
+    maxWE = Math.max(maxWE, d.filter(p => p.macro_region === 'western_europe').length);
+  }
+  check('H5: europe+FR → France ≤ 8 (cap)', maxFR <= 8, `max=${maxFR}`);
+  check('H5: europe+FR → western_europe ≤ 8', maxWE <= 8, `max=${maxWE}`);
+}
+
+// H6: deck still exactly 30 with country boost (incl. hard-seed top-up)
+check('H6: europe+SI deck length == 30', decksC('europe','Slovenia',5).every(d => d.length === CALIB_SIZE));
+
 console.log(`\n${'─'.repeat(56)}\nTotal: ${PASS + FAIL}  PASS: ${PASS}  FAIL: ${FAIL}`);
 process.exit(FAIL === 0 ? 0 : 1);
