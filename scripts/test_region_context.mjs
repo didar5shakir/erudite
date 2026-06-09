@@ -2,7 +2,7 @@
  * Stage 6.6 — IP/country region-context resolver tests (pure function, real module).
  * Run: node --loader ./scripts/ts-import-loader.mjs scripts/test_region_context.mjs
  */
-import { resolveRegionContext, countryNameFromCode } from '../src/lib/play/region-context.ts';
+import { resolveRegionContext, countryNameFromCode, isExplicitRegionParam } from '../src/lib/play/region-context.ts';
 
 let PASS = 0, FAIL = 0;
 const eq = (name, got, want) => {
@@ -17,6 +17,17 @@ eq('TR → Türkiye (diacritic)', countryNameFromCode('TR'), 'Türkiye');
 eq('kr lowercase → South Korea', countryNameFromCode('kr'), 'South Korea');
 eq('unknown code → null', countryNameFromCode('ZZ'), null);
 eq('null code → null', countryNameFromCode(null), null);
+
+console.log('\n── isExplicitRegionParam (mandatory-selection gate) ──');
+eq('europe → explicit', isExplicitRegionParam('europe'), true);
+eq('kz → explicit', isExplicitRegionParam('kz'), true);
+eq('global → explicit', isExplicitRegionParam('global'), true);
+eq('russia_cis → explicit', isExplicitRegionParam('russia_cis'), true);
+eq('["europe"] (array) → explicit', isExplicitRegionParam(['europe']), true);
+eq('undefined → not explicit', isExplicitRegionParam(undefined), false);
+eq('"" → not explicit', isExplicitRegionParam(''), false);
+eq('atlantis → not explicit', isExplicitRegionParam('atlantis'), false);
+eq('uppercase KZ → not explicit (params are lowercase)', isExplicitRegionParam('KZ'), false);
 
 console.log('\n── no explicit region → IP drives boost + macro fallback ──');
 eq('no region + PL → Poland / europe',  resolveRegionContext(undefined, 'PL', 'global'), { region: 'europe', countryBoost: 'Poland' });

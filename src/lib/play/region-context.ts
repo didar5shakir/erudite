@@ -75,7 +75,9 @@ export function countryNameFromCode(code: string | null | undefined): string | n
   return COUNTRY_CODE_TO_NAME[code.toUpperCase()] ?? null;
 }
 
-function isExplicitRegion(raw: string | string[] | undefined): raw is RegionParam {
+// True when the URL carried an explicit, recognized ?region=… value. Used by /play to
+// decide whether a bare visit may start a game (it may not — region selection is mandatory).
+export function isExplicitRegionParam(raw: string | string[] | undefined): raw is RegionParam {
   const v = Array.isArray(raw) ? raw[0] : raw;
   return !!v && (REGION_PARAMS as readonly string[]).includes(v);
 }
@@ -89,7 +91,7 @@ export function resolveRegionContext(
   const ipMacro: MacroRegion | null = ipName ? (MACRO_REGION_MAP[ipName] ?? null) : null;
 
   // ── No explicit selection → IP country drives boost + macro fallback ──
-  if (!isExplicitRegion(regionParam)) {
+  if (!isExplicitRegionParam(regionParam)) {
     if (ipName && ipMacro) {
       const region = MACRO_TO_PARAM[ipMacro];
       // KZ keeps its curated kz_ca path (no generic country boost).

@@ -45,6 +45,7 @@ interface PlayPageProps {
   initialDeck: Person[];
   locale: string;
   region: RegionParam;
+  regionExplicit: boolean;        // true if the URL carried an explicit ?region (mandatory-selection gate)
   countryBoost?: string | null;   // IP country boost (server-resolved); preserved across continue
   labels: Labels;
 }
@@ -82,7 +83,7 @@ function appendAdaptiveCard(
   };
 }
 
-export default function PlayPage({ initialDeck, locale, region, countryBoost, labels }: PlayPageProps) {
+export default function PlayPage({ initialDeck, locale, region, regionExplicit, countryBoost, labels }: PlayPageProps) {
   const [session, setSession] = useState<PlaySession | null>(null);
   const [pools, setPools] = useState<PlayPoolsExtended | null>(null);
   const startedAt = useRef<number>(Date.now());
@@ -125,6 +126,11 @@ export default function PlayPage({ initialDeck, locale, region, countryBoost, la
     const existing = loadSession(locale, region);
     if (existing) {
       setSession(existing);
+    } else if (!regionExplicit) {
+      // Region selection is mandatory: a bare /play (no explicit ?region) with no
+      // resumable session must not silently start a game (incl. via IP) — go to onboarding.
+      router.push('/onboarding');
+      return;
     } else {
       const fresh = createNewSession(locale, initialDeck, region);
       saveSession(fresh, region);

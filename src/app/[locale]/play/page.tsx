@@ -6,7 +6,7 @@ import { headers } from 'next/headers';
 
 import { createInitialSessionDeck } from '@/lib/play/play-sampler';
 import type { RegionParam } from '@/lib/play/play-sampler';
-import { resolveRegionContext } from '@/lib/play/region-context';
+import { resolveRegionContext, isExplicitRegionParam } from '@/lib/play/region-context';
 import type { PlayPools } from '@/lib/play/types';
 import PlayPage from '@/components/play/PlayPage';
 
@@ -30,13 +30,21 @@ export default async function Page({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  // Explicit ?region=<id> always wins. IP country (x-vercel-ip-country, server-only)
-  // only adds a country boost when compatible with the selection, or drives the macro
-  // fallback when no region was selected. The country code never reaches the client.
+  // Region selection is mandatory. An EXPLICIT ?region=<id> always wins and may use IP
+  // (x-vercel-ip-country, server-only) for a compatible country boost. A bare /play (no
+  // explicit region) must NOT silently start a game via IP — PlayPage redirects to
+  // /onboarding unless a resumable session exists. So for the non-explicit case we use the
+  // plain locale fallback (no IP) just for the session-key lookup.
   const { region } = await searchParams;
-  const ipCountry = (await headers()).get('x-vercel-ip-country');
   const fallback: RegionParam = locale === 'kk' ? 'kz' : 'global';
-  const { region: resolvedRegion, countryBoost } = resolveRegionContext(region, ipCountry, fallback);
+  const regionExplicit = isExplicitRegionParam(region);
+
+  let resolvedRegion: RegionParam = fallback;
+  let countryBoost: string | null = null;
+  if (regionExplicit) {
+    const ipCountry = (await headers()).get('x-vercel-ip-country');
+    ({ region: resolvedRegion, countryBoost } = resolveRegionContext(region, ipCountry, fallback));
+  }
 
   const pools = loadPools();
   const deck = createInitialSessionDeck(pools, resolvedRegion, undefined, countryBoost);
@@ -48,6 +56,7 @@ export default async function Page({
       initialDeck={deck}
       locale={locale}
       region={resolvedRegion}
+      regionExplicit={regionExplicit}
       countryBoost={countryBoost}
       labels={{
         know:      t('know'),
