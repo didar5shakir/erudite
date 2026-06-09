@@ -100,7 +100,7 @@ export default function PlayCard({ person, locale, labels, onAnswer, progress }:
 
           <button
             onClick={() => onAnswer('dont_know')}
-            className="flex-1 py-4 rounded-xl border border-divider bg-white text-graphite font-semibold text-lg hover:bg-divider/40 active:bg-divider/60 transition-colors"
+            className="flex-1 py-4 rounded-xl bg-rose-700 text-white font-semibold text-lg hover:bg-rose-600 active:bg-rose-800 transition-colors"
           >
             {labels.dont_know}
           </button>
